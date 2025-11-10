@@ -1,30 +1,7 @@
-/************************************************************************************************/
-/* PART 1                                             */
-/************************************************************************************************/
-
---------------------------------------------------------------------------------------------------
--- TASK 1.1: The marketing team needs a list of animation movies between 2017 and 2019
--- to promote family-friendly content. Show all animation movies released during this
--- period with rate more than 1, sorted alphabetically.
---------------------------------------------------------------------------------------------------
-
--- Business Logic: To find "animation movies", we must join the `film` table with the
--- `category` table via the `film_category` mapping table. We then filter this joined
--- result based on three criteria:
--- 1. The category name is 'Animation'.
--- 2. The film's release year is between 2017 and 2019 (inclusive).
--- 3. The film's rental rate is greater than 1.
--- Finally, we sort the results alphabetically by the film's title.
-
--- Solution 1.1.1: JOIN
--- This is the most direct and common solution, joining all three tables
--- and applying all filters in the WHERE clause.
-
+--PART 1
+--task 1
 SELECT
-    f.title,
-    f.release_year,
-    f.rental_rate,
-    c.name AS category_name
+    f.title
 FROM
     public.film AS f
 INNER JOIN
@@ -32,63 +9,38 @@ INNER JOIN
 INNER JOIN
     public.category AS c ON fc.category_id = c.category_id
 WHERE
-    c.name = 'Animation'
+    LOWER(c.name) = 'animation'
     AND f.release_year BETWEEN 2017 AND 2019
     AND f.rental_rate > 1
 ORDER BY
     f.title;
 
-/*
-Advantages/Disadvantages (JOIN):
-* Readability: High for anyone familiar with SQL JOINs. It's a very standard pattern.
-* Performance: Generally very good. The query optimizer can easily create an
-    efficient execution plan, likely starting from the small 'category' table.
-* Complexity: Low. It's a straightforward query.
-*/
-
--- Solution 1.1.2: Subquery
--- This solution uses a subquery in the WHERE clause to find the `category_id`
--- for 'Animation' first, then joins `film` and `film_category`.
-
+	
 SELECT
-    f.title,
-    f.release_year,
-    f.rental_rate
+    f.title
 FROM
     public.film AS f
 INNER JOIN
     public.film_category AS fc ON f.film_id = fc.film_id
 WHERE
-    fc.category_id = (SELECT category_id FROM public.category WHERE name = 'Animation')
+    fc.category_id = (
+        SELECT category_id
+        FROM public.category
+        WHERE LOWER(name) = 'animation'
+    )
     AND f.release_year BETWEEN 2017 AND 2019
     AND f.rental_rate > 1
 ORDER BY
     f.title;
 
-/*
-Advantages/Disadvantages (Subquery):
-* Readability: Can be slightly less readable than a direct JOIN, as the logic
-    is split between the main query and the subquery.
-* Performance: For a simple lookup like this, the optimizer will likely
-    rewrite it as an INNER JOIN, resulting in identical performance.
-* Limitations: Less flexible if you needed to select data *from* the category table
-    (like the category_name) without joining it again.
-*/
-
--- Solution 1.1.3: CTE (Common Table Expression)
--- This solution uses a CTE to first define the 'Animation' category,
--- and then joins it in the main query.
-
-WITH animation_category AS (
+	WITH animation_category AS (
     SELECT category_id
     FROM public.category
-    WHERE name = 'Animation'
+    WHERE LOWER(name) = 'animation'
 )
+
 SELECT
-    f.title,
-    f.release_year,
-    f.rental_rate,
-    'Animation' AS category_name -- We can hardcode this as we filtered in the CTE
+    f.title
 FROM
     public.film AS f
 INNER JOIN
@@ -101,144 +53,41 @@ WHERE
 ORDER BY
     f.title;
 
-/*
-Advantages/Disadvantages (CTE):
-* Readability: High, arguably the highest for complex queries. It breaks
-    the logic into named, sequential steps ("first, find the category, then find the films").
-* Performance: Good. Modern query planners optimize CTEs well, often
-    inlining them like a subquery or join.
-* Complexity: Slightly more verbose for a simple query, but invaluable for
-    multi-step logic.
-*/
 
---------------------------------------------------------------------------------------------------
--- TASK 1.2: The finance department requires a report on store performance.
--- Calculate the revenue earned by each rental store after March 2017 (since April)
--- (include columns: address and address2 – as one column, revenue).
---------------------------------------------------------------------------------------------------
-
--- Business Logic: To calculate revenue per store, we must sum the `amount` from the
--- `payment` table. We link a payment to a store via the `staff` table
--- (`payment.staff_id` -> `staff.staff_id` -> `staff.store_id`).
--- We then join to the `store` and `address` tables to get the store's address.
--- We filter payments to include only those *after* '2017-03-31'.
--- Finally, we group by the store's concatenated address and sum the payments.
-
--- Solution 1.2.1: JOIN
--- This solution joins all required tables and performs a GROUP BY
--- on the final concatenated address string.
+-- TASK 2
 
 SELECT
-    CONCAT(a.address, ', ', a.address2) AS store_address,
+    st.store_id,
+    CONCAT_WS(', ', a.address, a.address2) AS store_address,
     SUM(p.amount) AS revenue
-FROM
-    public.payment AS p
-INNER JOIN
-    public.staff AS s ON p.staff_id = s.staff_id
-INNER JOIN
-    public.store AS st ON s.store_id = st.store_id
-INNER JOIN
-    public.address AS a ON st.address_id = a.address_id
-WHERE
-    p.payment_date > '2017-03-31'
-GROUP BY
-    store_address
-ORDER BY
-    revenue DESC;
-
-/*
-Advantages/Disadvantages (JOIN):
-* Readability: Good. It's a clear chain of joins from payment to address.
-* Performance: Efficient. The database can filter payments by date first,
-    then perform the joins and aggregation on a smaller dataset.
-* Complexity: Low.
-*/
-
--- Solution 1.2.2: Subquery (Correlated)
--- This solution selects from the `store` and `address` tables, and then uses a
--- correlated subquery in the SELECT list to calculate the revenue for each store.
-
-SELECT
-    CONCAT(a.address, ', ', a.address2) AS store_address,
-    (SELECT SUM(p.amount)
-     FROM public.payment AS p
-     INNER JOIN public.staff AS s ON p.staff_id = s.staff_id
-     WHERE s.store_id = st.store_id
-       AND p.payment_date > '2017-03-31'
-    ) AS revenue
-FROM
-    public.store AS st
-INNER JOIN
-    public.address AS a ON st.address_id = a.address_id
-ORDER BY
-    revenue DESC;
-
-/*
-Advantages/Disadvantages (Correlated Subquery):
-* Readability: Can be less readable, as the core logic (summing revenue)
-    is "hidden" inside the SELECT list.
-* Performance: Often very poor. The subquery is executed *for each row*
-    in the outer query (for each store). This is much less efficient than the JOIN.
-* Complexity: High.
-*/
-
--- Solution 1.2.3: CTE
--- This solution uses a CTE to first calculate the revenue for each `store_id`.
--- The main query then joins this aggregated data to the `store` and `address`
--- tables to get the address details.
-
+FROM public.payment   AS p
+JOIN public.rental    AS r ON p.rental_id = r.rental_id
+JOIN public.inventory AS i ON r.inventory_id = i.inventory_id
+JOIN public.store     AS st ON i.store_id = st.store_id
+JOIN public.address   AS a ON st.address_id = a.address_id
+WHERE p.payment_date >= '2017-04-01'    -- explicit: since April 2017
+GROUP BY st.store_id, a.address, a.address2
+ORDER BY revenue DESC;
 WITH store_revenue AS (
     SELECT
-        s.store_id,
+        i.store_id,
         SUM(p.amount) AS total_revenue
-    FROM
-        public.payment AS p
-    INNER JOIN
-        public.staff AS s ON p.staff_id = s.staff_id
-    WHERE
-        p.payment_date > '2017-03-31'
-    GROUP BY
-        s.store_id
+    FROM public.payment   AS p
+    JOIN public.rental    AS r ON p.rental_id = r.rental_id
+    JOIN public.inventory AS i ON r.inventory_id = i.inventory_id
+    WHERE p.payment_date >= '2017-04-01'
+    GROUP BY i.store_id
 )
 SELECT
-    CONCAT(a.address, ', ', a.address2) AS store_address,
+    sr.store_id,
+    CONCAT_WS(', ', a.address, a.address2) AS store_address,
     sr.total_revenue AS revenue
-FROM
-    store_revenue AS sr
-INNER JOIN
-    public.store AS st ON sr.store_id = st.store_id
-INNER JOIN
-    public.address AS a ON st.address_id = a.address_id
-ORDER BY
-    revenue DESC;
+FROM store_revenue AS sr
+JOIN public.store   AS st ON sr.store_id = st.store_id
+JOIN public.address AS a ON st.address_id = a.address_id
+ORDER BY revenue DESC;
 
-/*
-Advantages/Disadvantages (CTE):
-* Readability: Excellent. It clearly separates the two main steps:
-    1. Calculate revenue per store ID.
-    2. Get address details for those stores.
-* Performance: Very good. The optimizer will aggregate in the CTE first,
-    creating a small result set to join against.
-* Complexity: Low-to-Medium. More verbose than the JOIN, but much clearer.
-*/
-
---------------------------------------------------------------------------------------------------
--- TASK 1.3: The marketing department aims to identify the most successful actors
--- since 2015. Show top-5 actors by number of movies (released after 2015) they
--- took part in (columns: first_name, last_name, number_of_movies,
--- sorted by number_of_movies in descending order).
---------------------------------------------------------------------------------------------------
-
--- Business Logic: We need to count films for each actor.
--- 1. Join `actor` -> `film_actor` -> `film`.
--- 2. Filter the `film` table for `release_year > 2015` *before* counting.
--- 3. Group by actor (`actor_id`, `first_name`, `last_name`) and count the films.
--- 4. Order by the count in descending order.
--- 5. Take the top 5 results using `LIMIT 5`.
-
--- Solution 1.3.1: JOIN
--- The standard approach: join all three tables, filter by year,
--- then group, count, order, and limit.
+--TASK 3
 
 SELECT
     a.first_name,
@@ -251,104 +100,18 @@ INNER JOIN
 INNER JOIN
     public.film AS f ON fa.film_id = f.film_id
 WHERE
-    f.release_year > 2015
+    f.release_year > 2015 -- Films released *after* 2015
 GROUP BY
-    a.actor_id, a.first_name, a.last_name
-ORDER BY
-    number_of_movies DESC
-LIMIT 5;
-
-/*
-Advantages/Disadvantages (JOIN):
-* Readability: High. This is a very standard "top N" query.
-* Performance: Good. The `WHERE` clause reduces the number of films
-    to be considered before the `GROUP BY` operation.
-* Complexity: Low.
-*/
-
--- Solution 1.3.2: Subquery (in FROM clause)
--- This solution uses a subquery in the `FROM` clause to first create a
--- temporary table of "recent films", then joins it.
-
-SELECT
+    a.actor_id,  -- Group by ID for accuracy
     a.first_name,
-    a.last_name,
-    COUNT(recent_films.film_id) AS number_of_movies
-FROM
-    public.actor AS a
-INNER JOIN
-    public.film_actor AS fa ON a.actor_id = fa.actor_id
-INNER JOIN
-    (SELECT film_id
-     FROM public.film
-     WHERE release_year > 2015
-    ) AS recent_films ON fa.film_id = recent_films.film_id
-GROUP BY
-    a.actor_id, a.first_name, a.last_name
+    a.last_name
 ORDER BY
     number_of_movies DESC
-LIMIT 5;
+-- Use the SQL-standard FETCH clause as requested
+FETCH FIRST 5 ROWS ONLY; 
 
-/*
-Advantages/Disadvantages (Subquery):
-* Readability: Good. It logically isolates the "recent films" criteria.
-* Performance: Good. The optimizer will treat this very similarly
-    to the CTE or simple JOIN solution.
-* Complexity: Low-to-Medium. Slightly more complex than the simple JOIN.
-*/
+--TASK 4
 
--- Solution 1.3.3: CTE
--- This solution uses a CTE to create a named "virtual table" of recent films,
--- which makes the main query very clean.
-
-WITH recent_films AS (
-    SELECT film_id
-    FROM public.film
-    WHERE release_year > 2015
-)
-SELECT
-    a.first_name,
-    a.last_name,
-    COUNT(rf.film_id) AS number_of_movies
-FROM
-    public.actor AS a
-INNER JOIN
-    public.film_actor AS fa ON a.actor_id = fa.actor_id
-INNER JOIN
-    recent_films AS rf ON fa.film_id = rf.film_id
-GROUP BY
-    a.actor_id, a.first_name, a.last_name
-ORDER BY
-    number_of_movies DESC
-LIMIT 5;
-
-/*
-Advantages/Disadvantages (CTE):
-* Readability: Excellent. The logic is very clear:
-    1. Define "recent_films".
-    2. Count those films for each actor.
-* Performance: Good, effectively identical to the Subquery solution.
-* Complexity: Low-to-Medium.
-*/
-
---------------------------------------------------------------------------------------------------
--- TASK 1.4: The marketing team needs to track production trends. Show number of
--- Drama, Travel, and Documentary films per year. (columns: release_year,
--- number_of_drama_movies, number_of_travel_movies, number_of_documentary_movies),
--- sorted by release year in descending order. Dealing with NULL values is encouraged.
---------------------------------------------------------------------------------------------------
-
--- Business Logic: This requires a "pivot". We need to turn rows of category data
--- into columns.
--- 1. Get all films and their release years from the `film` table.
--- 2. `LEFT JOIN` to `film_category` and `category` to get category names.
--- 3. Group the results by `release_year`.
--- 4. Use "conditional aggregation" (e.g., `COUNT(CASE ...)` or `SUM(CASE ...)`)
---    to count films *only* if their category name matches 'Drama', 'Travel',
---    or 'Documentary'.
--- 5. Using `COUNT(CASE ... ELSE NULL END)` or `SUM(CASE ... ELSE 0 END)`
---    handles the "NULL values" (shows 0 instead of NULL).
--- 6. Sort by `release_year` descending.
 
 -- Solution 1.4.1: JOIN (with Conditional Aggregation)
 -- This is the most efficient and standard way to pivot data in SQL.
@@ -356,9 +119,9 @@ Advantages/Disadvantages (CTE):
 
 SELECT
     f.release_year,
-    COUNT(CASE WHEN c.name = 'Drama' THEN f.film_id ELSE NULL END) AS number_of_drama_movies,
-    COUNT(CASE WHEN c.name = 'Travel' THEN f.film_id ELSE NULL END) AS number_of_travel_movies,
-    COUNT(CASE WHEN c.name = 'Documentary' THEN f.film_id ELSE NULL END) AS number_of_documentary_movies
+    COUNT(CASE WHEN LOWER(c.name) = 'drama' THEN f.film_id ELSE NULL END) AS number_of_drama_movies,
+    COUNT(CASE WHEN LOWER(c.name) = 'travel' THEN f.film_id ELSE NULL END) AS number_of_travel_movies,
+    COUNT(CASE WHEN LOWER(c.name) = 'documentary' THEN f.film_id ELSE NULL END) AS number_of_documentary_movies
 FROM
     public.film AS f
 LEFT JOIN -- Use LEFT JOIN to include years that might not have these categories
@@ -388,19 +151,19 @@ SELECT
      FROM public.film AS f
      JOIN public.film_category AS fc ON f.film_id = fc.film_id
      JOIN public.category AS c ON fc.category_id = c.category_id
-     WHERE c.name = 'Drama' AND f.release_year = f_main.release_year
+     WHERE LOWER(c.name) = 'drama' AND f.release_year = f_main.release_year
     ) AS number_of_drama_movies,
     (SELECT COUNT(f.film_id)
      FROM public.film AS f
      JOIN public.film_category AS fc ON f.film_id = fc.film_id
      JOIN public.category AS c ON fc.category_id = c.category_id
-     WHERE c.name = 'Travel' AND f.release_year = f_main.release_year
+     WHERE LOWER(c.name) = 'travel' AND f.release_year = f_main.release_year
     ) AS number_of_travel_movies,
     (SELECT COUNT(f.film_id)
      FROM public.film AS f
      JOIN public.film_category AS fc ON f.film_id = fc.film_id
      JOIN public.category AS c ON fc.category_id = c.category_id
-     WHERE c.name = 'Documentary' AND f.release_year = f_main.release_year
+     WHERE LOWER(c.name) = 'documentary' AND f.release_year = f_main.release_year
     ) AS number_of_documentary_movies
 FROM
     public.film AS f_main
@@ -435,9 +198,9 @@ WITH film_with_category AS (
 )
 SELECT
     fwc.release_year,
-    COUNT(CASE WHEN fwc.category_name = 'Drama' THEN fwc.film_id ELSE NULL END) AS number_of_drama_movies,
-    COUNT(CASE WHEN fwc.category_name = 'Travel' THEN fwc.film_id ELSE NULL END) AS number_of_travel_movies,
-    COUNT(CASE WHEN fwc.category_name = 'Documentary' THEN fwc.film_id ELSE NULL END) AS number_of_documentary_movies
+    COUNT(CASE WHEN LOWER(fwc.category_name) = 'drama' THEN fwc.film_id ELSE NULL END) AS number_of_drama_movies,
+    COUNT(CASE WHEN LOWER(fwc.category_name) = 'travel' THEN fwc.film_id ELSE NULL END) AS number_of_travel_movies,
+    COUNT(CASE WHEN LOWER(fwc.category_name) = 'documentary' THEN fwc.film_id ELSE NULL END) AS number_of_documentary_movies
 FROM
     film_with_category AS fwc
 GROUP BY
@@ -445,14 +208,14 @@ GROUP BY
 ORDER BY
     fwc.release_year DESC;
 
-/*
-Advantages/Disadvantages (CTE):
+
+/*Advantages/Disadvantages (CTE):
 * Readability: Good. It separates the "data prep" (joining) from the
     "analysis" (pivoting/aggregation).
 * Performance: Good. The optimizer will likely "inline" the CTE and
     execute a plan identical to the simple JOIN (Solution 1.4.1).
 * Complexity: Medium. Slightly more verbose than the JOIN solution.
-*/
+*/ 
 
 /************************************************************************************************/
 /* PART 2                                             */
@@ -461,19 +224,7 @@ Advantages/Disadvantages (CTE):
 --------------------------------------------------------------------------------------------------
 -- TASK 2.1: The HR department aims to reward top-performing employees in 2017.
 -- Show which three employees generated the most revenue in 2017?
--- Assumptions:
---  - staff could work in several stores... indicate... the last one
---  - if staff processed the payment then he works in the same store
---  - take into account only payment_date
---------------------------------------------------------------------------------------------------
 
--- Business Logic: We interpret "last store" as the `store_id` currently assigned
--- to the employee in the `staff` table (`staff.store_id`).
--- 1. Filter the `payment` table for all payments where `payment_date` is in 2017.
--- 2. Group these payments by `staff_id` to `SUM(amount)` and get total revenue per employee.
--- 3. Join this aggregated data with `staff` (for name), `store` (for `store_id`),
---    and `address` (for store address).
--- 4. Order by the total revenue descending and `LIMIT 3`.
 
 -- Solution 2.1.1: JOIN
 -- Joins all tables first, filters by date, then groups by employee and store.
@@ -482,7 +233,7 @@ SELECT
     s.first_name,
     s.last_name,
     SUM(p.amount) AS total_revenue_2017,
-    CONCAT(a.address, ', ', a.address2) AS last_store_address
+    CONCAT_WS(', ', a.address, a.address2) AS last_store_address
 FROM
     public.payment AS p
 INNER JOIN
@@ -492,17 +243,21 @@ INNER JOIN
 INNER JOIN
     public.address AS a ON st.address_id = a.address_id
 WHERE
-    p.payment_date >= '2017-01-01' AND p.payment_date < '2018-01-01'
+    EXTRACT(YEAR FROM p.payment_date) = 2017
 GROUP BY
-    s.staff_id, s.first_name, s.last_name, last_store_address
+    s.staff_id, s.first_name, s.last_name, st.store_id, a.address, a.address2
 ORDER BY
-    total_revenue_2017 DESC
-LIMIT 3;
+    total_revenue_2017 DESC,
+    s.last_name ASC,
+    s.first_name ASC
+FETCH FIRST 3 ROWS ONLY;
 
 /*
 Advantages/Disadvantages (JOIN):
 * Readability: Good. Clear logic flow.
-* Performance: Good. The date filter will be applied early.
+* Performance: Good, but the WHERE clause with EXTRACT() is not sargable,
+    meaning it may not use an index on payment_date as efficiently as a
+    date range check.
 * Complexity: Low.
 */
 
@@ -514,7 +269,7 @@ SELECT
     s.first_name,
     s.last_name,
     staff_revenue.total_revenue AS total_revenue_2017,
-    CONCAT(a.address, ', ', a.address2) AS last_store_address
+    CONCAT_WS(', ', a.address, a.address2) AS last_store_address
 FROM
     (SELECT
          p.staff_id,
@@ -522,7 +277,7 @@ FROM
      FROM
          public.payment AS p
      WHERE
-         p.payment_date >= '2017-01-01' AND p.payment_date < '2018-01-01'
+         EXTRACT(YEAR FROM p.payment_date) = 2017
      GROUP BY
          p.staff_id
     ) AS staff_revenue
@@ -533,14 +288,17 @@ INNER JOIN
 INNER JOIN
     public.address AS a ON st.address_id = a.address_id
 ORDER BY
-    total_revenue_2017 DESC
-LIMIT 3;
+    total_revenue_2017 DESC,
+    s.last_name ASC,
+    s.first_name ASC
+FETCH FIRST 3 ROWS ONLY;
 
 /*
 Advantages/Disadvantages (Subquery):
 * Readability: Good. Clearly separates aggregation from joining metadata.
 * Performance: Very good. Aggregates on the large `payment` table first,
-    creating a very small result set (only a few staff) to join.
+    creating a very small result set to join. The non-sargable WHERE clause
+    is applied during this initial aggregation.
 * Complexity: Medium.
 */
 
@@ -555,7 +313,7 @@ WITH staff_revenue_2017 AS (
     FROM
         public.payment AS p
     WHERE
-        p.payment_date >= '2017-01-01' AND p.payment_date < '2018-01-01'
+        EXTRACT(YEAR FROM p.payment_date) = 2017
     GROUP BY
         p.staff_id
 )
@@ -563,7 +321,7 @@ SELECT
     s.first_name,
     s.last_name,
     sr.total_revenue AS total_revenue_2017,
-    CONCAT(a.address, ', ', a.address2) AS last_store_address
+    CONCAT_WS(', ', a.address, a.address2) AS last_store_address
 FROM
     staff_revenue_2017 AS sr
 INNER JOIN
@@ -573,33 +331,20 @@ INNER JOIN
 INNER JOIN
     public.address AS a ON st.address_id = a.address_id
 ORDER BY
-    total_revenue_2017 DESC
-LIMIT 3;
+    total_revenue_2017 DESC,
+    s.last_name ASC,
+    s.first_name ASC
+FETCH FIRST 3 ROWS ONLY;
 
 /*
 Advantages/Disadvantages (CTE):
 * Readability: Excellent. The steps are named and clear.
-* Performance: Very good. Same logic as the `FROM` subquery.
+* Performance: Very good. Same benefits as the `FROM` subquery.
 * Complexity: Medium.
 */
 
---------------------------------------------------------------------------------------------------
--- TASK 2.2: The management team wants to identify the most popular movies.
--- Show which 5 movies were rented more than others (number of rentals), and
--- what's the expected age of the audience for these movies?
--- Use 'Motion Picture Association film rating system' descriptions.
---------------------------------------------------------------------------------------------------
 
--- Business Logic:
--- 1. "Most rented" means we must count rows in the `rental` table.
--- 2. Join `rental` -> `inventory` -> `film` to link rentals to film titles.
--- 3. Group by `film_id`, `title`, and `rating`.
--- 4. Count the rentals (`COUNT(r.rental_id)`).
--- 5. Use a `CASE` statement in the `SELECT` list to map the `film.rating`
---    column ('G', 'PG', etc.) to the long-form descriptions provided.
--- 6. Order by the rental count descending and `LIMIT 5`.
-
--- Solution 2.2.1: JOIN
+--Solution 2.2.1: JOIN
 -- Joins all tables, then groups, counts, and maps the rating.
 
 SELECT
