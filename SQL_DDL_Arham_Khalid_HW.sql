@@ -537,4 +537,4 @@ UNION ALL
 SELECT 'ticket_type_promotions',              COUNT(*) FROM ticket_type_promotions WHERE record_ts IS NULL;
 
 
-SELECT * FROM metro.trips;
+SELECT * FROM metro.role;
