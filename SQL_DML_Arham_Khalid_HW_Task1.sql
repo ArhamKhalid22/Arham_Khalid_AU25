@@ -1,269 +1,556 @@
-/*Choose your real top-3 favorite movies and add them to the 'film' table (films with the title Film1, Film2, etc - will not be taken into account and grade will be reduced by 20%)
-Fill in rental rates with 4.99, 9.99 and 19.99 and rental durations with 1, 2 and 3 weeks respectively.
-*/
-INSERT INTO film (
-    film_id, title, description, release_year, language_id, original_language_id,
-    rental_duration, rental_rate, length, replacement_cost, rating, last_update,
+/*
+   PART 1.1 – ADD 3 FAVORITE MOVIES TO public.film
+   Movies:
+     - Inception
+     - Pulp Fiction
+     - The Matrix
+  
+ */
+
+INSERT INTO public.film (
+    title,
+    description,
+    release_year,
+    language_id,
+    original_language_id,
+    rental_duration,
+    rental_rate,
+    length,
+    replacement_cost,
+    rating,
+    last_update,
     special_features
 )
-VALUES
--- ROW 1: 'Inception' 
-(
-    1001,
-    'Inception',
-    'A thief who steals corporate secrets through use of dream-sharing technology.',
-    2010,
-    1,
-    NULL,
-    1, -- rental_duration (1 week)
-    4.99, -- rental_rate
-    148,
-    19.99,
-    'PG-13',
-    CURRENT_TIMESTAMP,
-    '{Trailers, Deleted Scenes, Behind the Scenes}'
-),
--- ROW 2: 'Pulp Fiction' 
-(
-    1002,
+-- Inception
+SELECT
+    'Inception' AS title,
+    'A thief who steals corporate secrets through use of dream-sharing technology.' AS description,
+    2010 AS release_year,
+    (
+        SELECT l.language_id
+        FROM public."language" l
+        WHERE LOWER(l.name) = 'english'
+        FETCH FIRST 1 ROW ONLY
+    ) AS language_id,
+    NULL AS original_language_id,
+    7 AS rental_duration,        -- 1 week => 7 days
+    4.99 AS rental_rate,
+    148 AS length,
+    19.99 AS replacement_cost,
+    'PG-13' AS rating,
+    CURRENT_DATE AS last_update,
+    ARRAY['Trailers', 'Deleted Scenes', 'Behind the Scenes']::text[] AS special_features
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM public.film f
+    WHERE LOWER(f.title) = 'inception'
+)
+UNION ALL
+-- Pulp Fiction
+SELECT
     'Pulp Fiction',
     'The lives of two mob hitmen, a boxer, a gangster and his wife, and a pair of diner bandits intertwine.',
     1994,
-    1,
+    (
+        SELECT l.language_id
+        FROM public."language" l
+        WHERE LOWER(l.name) = 'english'
+        FETCH FIRST 1 ROW ONLY
+    ),
     NULL,
-    2, -- rental_duration (2 weeks)
-    9.99, -- rental_rate
+    14,           -- 2 weeks => 14 days
+    9.99,
     154,
     19.99,
     'R',
-    CURRENT_TIMESTAMP,
-    '{Trailers, Commentary, Behind the Scenes}'
-),
--- ROW 3: 'The Matrix' 
-(
-    1003,
+    CURRENT_DATE,
+    ARRAY['Trailers', 'Commentary', 'Behind the Scenes']::text[]
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM public.film f
+    WHERE LOWER(f.title) = 'pulp fiction'
+)
+UNION ALL
+-- The Matrix
+SELECT
     'The Matrix',
-    'A computer hacker learns from mysterious rebels about the true nature of his reality and his role in the war against its controllers.',
+    'A computer hacker learns about the true nature of his reality and his role in the war against its controllers.',
     1999,
-    1,
+    (
+        SELECT l.language_id
+        FROM public."language" l
+        WHERE LOWER(l.name) = 'english'
+        FETCH FIRST 1 ROW ONLY
+    ),
     NULL,
-    3, -- rental_duration (3 weeks)
-    19.99, -- rental_rate
+    21,           -- 3 weeks => 21 days
+    19.99,
     136,
     14.99,
     'R',
-    CURRENT_TIMESTAMP,
-    '{Deleted Scenes, Behind the Scenes, Making Of}'
+    CURRENT_DATE,
+    ARRAY['Deleted Scenes', 'Behind the Scenes', 'Making Of']::text[]
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM public.film f
+    WHERE LOWER(f.title) = 'the matrix'
 )
-RETURNING film_id, title;
+RETURNING film_id, title, rental_duration, rental_rate;
 
-COMMIT; 
---select * from film where film_id in (1001,1002,1003);
---------------------------------------------------------------------
-INSERT INTO actor (
-    actor_id, first_name, last_name, last_update
-)
-VALUES
-    (201, 'LEONARDO', 'DICAPRIO', CURRENT_TIMESTAMP), -- Inception
-    (202, 'JOSEPH', 'GORDON-LEVITT', CURRENT_TIMESTAMP), -- Inception
-    (203, 'ELLEN', 'PAGE', CURRENT_TIMESTAMP), -- Inception (as credited in 2010)
-    (204, 'JOHN', 'TRAVOLTA', CURRENT_TIMESTAMP), -- Pulp Fiction
-    (205, 'SAMUEL', 'L JACKSON', CURRENT_TIMESTAMP), -- Pulp Fiction
-    (206, 'UMA', 'THURMAN', CURRENT_TIMESTAMP), -- Pulp Fiction
-    (207, 'KEANU', 'REEVES', CURRENT_TIMESTAMP) -- The Matrix
-RETURNING actor_id, first_name, last_name;
-
-COMMIT; 
--- Map the 7 newly created actors to the 3 films (1001, 1002, 1003)
-INSERT INTO film_actor (
-    actor_id, film_id, last_update
-)
-VALUES
-    -- INCEPTION (Film ID 1111)
-    (201, 1001, CURRENT_TIMESTAMP), -- Leonardo DiCaprio
-    (202, 1001, CURRENT_TIMESTAMP), -- Joseph Gordon-Levitt
-    (203, 1001, CURRENT_TIMESTAMP), -- Ellen Page
-
-    -- PULP FICTION (Film ID 1112)
-    (204, 1002, CURRENT_TIMESTAMP), -- John Travolta
-    (205, 1002, CURRENT_TIMESTAMP), -- Samuel L Jackson
-    (206, 1002, CURRENT_TIMESTAMP), -- Uma Thurman
-
-    -- THE MATRIX (Film ID 1113)
-    (207, 1003, CURRENT_TIMESTAMP); -- Keanu Reeves
+-- Verification (read-only)
+SELECT
+    f.film_id,
+    f.title,
+    f.rental_duration,
+    f.rental_rate
+FROM public.film f
+WHERE LOWER(f.title) IN ('inception', 'pulp fiction', 'the matrix')
+ORDER BY f.title;
 
 COMMIT;
 
---quick join query to confirm all insertions were mapped correctly
+
+/* 
+   PART 1.2 – ADD REAL ACTORS & MAP THEM TO FILMS
+   Actors:
+     Inception: Leonardo DiCaprio, Joseph Gordon-Levitt,
+                Ellen/Elliot Page (handle both)
+     Pulp Fiction: John Travolta, Samuel L Jackson, Uma Thurman
+     The Matrix: Keanu Reeves
+  */
+
+-- 1. Insert actors (if not already present)
+INSERT INTO public.actor (
+    first_name,
+    last_name,
+    last_update
+)
+-- Leonardo DiCaprio
+SELECT 'LEONARDO', 'DICAPRIO', CURRENT_DATE
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM public.actor a
+    WHERE LOWER(a.first_name) = 'leonardo'
+      AND LOWER(a.last_name)  = 'dicaprio'
+)
+UNION ALL
+-- Joseph Gordon-Levitt
+SELECT 'JOSEPH', 'GORDON-LEVITT', CURRENT_DATE
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM public.actor a
+    WHERE LOWER(a.first_name) = 'joseph'
+      AND LOWER(a.last_name)  = 'gordon-levitt'
+)
+UNION ALL
+
+SELECT 'ELLEN', 'PAGE', CURRENT_DATE
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM public.actor a
+    WHERE LOWER(a.last_name)  = 'page'
+      AND LOWER(a.first_name) IN ('ellen', 'elliot')
+)
+UNION ALL
+-- John Travolta
+SELECT 'JOHN', 'TRAVOLTA', CURRENT_DATE
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM public.actor a
+    WHERE LOWER(a.first_name) = 'john'
+      AND LOWER(a.last_name)  = 'travolta'
+)
+UNION ALL
+-- Samuel L Jackson
+SELECT 'SAMUEL', 'L JACKSON', CURRENT_DATE
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM public.actor a
+    WHERE LOWER(a.first_name) = 'samuel'
+      AND LOWER(a.last_name)  = 'l jackson'
+)
+UNION ALL
+-- Uma Thurman
+SELECT 'UMA', 'THURMAN', CURRENT_DATE
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM public.actor a
+    WHERE LOWER(a.first_name) = 'uma'
+      AND LOWER(a.last_name)  = 'thurman'
+)
+UNION ALL
+-- Keanu Reeves
+SELECT 'KEANU', 'REEVES', CURRENT_DATE
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM public.actor a
+    WHERE LOWER(a.first_name) = 'keanu'
+      AND LOWER(a.last_name)  = 'reeves'
+)
+RETURNING actor_id, first_name, last_name;
+
+-- Verification
+SELECT
+    a.actor_id,
+    a.first_name,
+    a.last_name
+FROM public.actor a
+WHERE LOWER(a.last_name) IN ('dicaprio', 'gordon-levitt', 'page', 'travolta', 'l jackson', 'thurman', 'reeves')
+ORDER BY a.last_name, a.first_name;
+
+COMMIT;
+
+
+-- 2. Map actors to films in public.film_actor
+WITH fav_films AS (
+    SELECT
+        f.film_id,
+        f.title
+    FROM public.film f
+    WHERE LOWER(f.title) IN ('inception', 'pulp fiction', 'the matrix')
+),
+film_actor_mapping AS (
+    SELECT
+        f.film_id,
+        f.title,
+        a.actor_id
+    FROM fav_films f
+    INNER JOIN public.actor a
+        ON (
+            -- Inception actors
+            LOWER(f.title) = 'inception'
+            AND (
+                (LOWER(a.first_name) = 'leonardo' AND LOWER(a.last_name) = 'dicaprio')
+                OR (LOWER(a.first_name) = 'joseph'  AND LOWER(a.last_name) = 'gordon-levitt')
+                OR (LOWER(a.last_name)  = 'page'
+                    AND LOWER(a.first_name) IN ('ellen', 'elliot'))
+            )
+        )
+        OR (
+            -- Pulp Fiction actors
+            LOWER(f.title) = 'pulp fiction'
+            AND (
+                (LOWER(a.first_name) = 'john'   AND LOWER(a.last_name) = 'travolta')
+                OR (LOWER(a.first_name) = 'samuel' AND LOWER(a.last_name) = 'l jackson')
+                OR (LOWER(a.first_name) = 'uma'    AND LOWER(a.last_name) = 'thurman')
+            )
+        )
+        OR (
+            -- The Matrix actors
+            LOWER(f.title) = 'the matrix'
+            AND LOWER(a.first_name) = 'keanu'
+            AND LOWER(a.last_name)  = 'reeves'
+        )
+)
+INSERT INTO public.film_actor (
+    actor_id,
+    film_id,
+    last_update
+)
+SELECT
+    fam.actor_id,
+    fam.film_id,
+    CURRENT_DATE AS last_update
+FROM film_actor_mapping fam
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM public.film_actor fa
+    WHERE fa.actor_id = fam.actor_id
+      AND fa.film_id  = fam.film_id
+)
+RETURNING actor_id, film_id;
+
+-- Verification join
 SELECT
     f.title AS film_title,
     a.first_name || ' ' || a.last_name AS actor_name
-FROM
-    film f
-JOIN
-    film_actor fa ON f.film_id = fa.film_id
-JOIN
-    actor a ON fa.actor_id = a.actor_id
-WHERE
-    f.film_id IN (1001, 1002, 1003)
-ORDER BY
-    f.title, a.last_name; 
-----------------------------------------------------------------
---Add your favorite movies to any store's inventory.
---select * from inventory;
-INSERT INTO inventory (
-    film_id, store_id, last_update
-)
-SELECT
-    f.film_id,
-    s.store_id,
-    CURRENT_DATE
-FROM
-    film f -- Get IDs for the new films
-CROSS JOIN
-    store s -- Cross join to every store
-WHERE
-    f.title IN ('Inception', 'Pulp Fiction', 'The Matrix')
-    -- Rerunnability check: Skip insertion if the film/store combination already exists.
-    AND NOT EXISTS (
-        SELECT 1
-        FROM inventory i
-        WHERE i.film_id = f.film_id AND i.store_id = s.store_id
-    )
-RETURNING inventory_id, film_id, store_id;
+FROM public.film f
+INNER JOIN public.film_actor fa
+    ON f.film_id = fa.film_id
+INNER JOIN public.actor a
+    ON fa.actor_id = a.actor_id
+WHERE LOWER(f.title) IN ('inception', 'pulp fiction', 'the matrix')
+ORDER BY f.title, actor_name;
 
 COMMIT;
 
-/*Alter any existing customer in the database with at least 
-43 rental and 43 payment records. Change their personal data to yours
-(first name, last name, address, etc.). You can use any existing address from the 
-"address" table. Please do not perform any updates on the "address" table, 
-as this can impact multiple records with the same addres*/
+
+/* 
+   PART 1.3 – ADD FAVORITE MOVIES TO ANY STORE'S INVENTORY
+ */
+
+WITH fav_films AS (
+    SELECT
+        f.film_id,
+        f.title
+    FROM public.film f
+    WHERE LOWER(f.title) IN ('inception', 'pulp fiction', 'the matrix')
+),
+all_stores AS (
+    SELECT s.store_id
+    FROM public.store s
+)
+INSERT INTO public.inventory (
+    film_id,
+    store_id,
+    last_update
+)
+SELECT
+    ff.film_id,
+    s.store_id,
+    CURRENT_DATE AS last_update
+FROM fav_films ff
+CROSS JOIN all_stores s
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM public.inventory i
+    WHERE i.film_id = ff.film_id
+      AND i.store_id = s.store_id
+)
+RETURNING inventory_id, film_id, store_id;
+
+-- Verification
+SELECT
+    i.inventory_id,
+    f.title,
+    i.store_id
+FROM public.inventory i
+INNER JOIN public.film f
+    ON f.film_id = i.film_id
+WHERE LOWER(f.title) IN ('inception', 'pulp fiction', 'the matrix')
+ORDER BY f.title, i.store_id;
+
+COMMIT;
+
+
+/*
+   PART 2 – UPDATE A HIGH-ACTIVITY CUSTOMER TO YOUR DATA
+  */
 
 SELECT
     c.customer_id,
-    c.first_name AS old_first_name,
-    c.last_name AS old_last_name
-FROM
-    customer c
-WHERE
-    (SELECT count(*) FROM rental r WHERE r.customer_id = c.customer_id) >= 43
-    AND (SELECT count(*) FROM payment p WHERE p.customer_id = c.customer_id) >= 43
-ORDER BY (SELECT count(*) FROM rental r WHERE r.customer_id = c.customer_id) DESC
-LIMIT 1;
+    c.store_id,
+    c.first_name,
+    c.last_name,
+    (SELECT COUNT(*) FROM public.rental r  WHERE r.customer_id = c.customer_id) AS rental_count,
+    (SELECT COUNT(*) FROM public.payment p WHERE p.customer_id = c.customer_id) AS payment_count
+FROM public.customer c
+WHERE (SELECT COUNT(*) FROM public.rental r  WHERE r.customer_id = c.customer_id) >= 43
+  AND (SELECT COUNT(*) FROM public.payment p WHERE p.customer_id = c.customer_id) >= 43
+ORDER BY rental_count DESC, payment_count DESC
+FETCH FIRST 1 ROW ONLY;
 
--- --- (Verification SELECT complete. Now proceed with the UPDATE.) ---
-
-UPDATE customer c
+WITH high_activity_customer AS (
+    SELECT
+        c.customer_id,
+        c.store_id
+    FROM public.customer c
+    WHERE (SELECT COUNT(*) FROM public.rental r  WHERE r.customer_id = c.customer_id) >= 43
+      AND (SELECT COUNT(*) FROM public.payment p WHERE p.customer_id = c.customer_id) >= 43
+    ORDER BY
+        (SELECT COUNT(*) FROM public.rental r  WHERE r.customer_id = c.customer_id) DESC,
+        (SELECT COUNT(*) FROM public.payment p WHERE p.customer_id = c.customer_id) DESC
+    FETCH FIRST 1 ROW ONLY
+),
+any_address AS (
+    SELECT a.address_id
+    FROM public.address a
+    ORDER BY a.address_id
+    FETCH FIRST 1 ROW ONLY
+)
+UPDATE public.customer c
 SET
-    first_name = 'MARVIN',
-    last_name = 'HENDERS',
-    email = 'marvin.henders@mydomain.com',
-    -- Safely link to an existing address_id (e.g., ID 100) to avoid updating the 'address' table.
-    address_id = (SELECT address_id FROM address WHERE address_id = 100 LIMIT 1),
+    first_name  = 'ARHAM',
+    last_name   = 'KHALID',
+    email       = 'arhamkhalid2207@gmail.com',
+    address_id  = (SELECT address_id FROM any_address),
     last_update = CURRENT_DATE
-WHERE
-    c.customer_id = (
-        -- Subquery finds the ID of the single, highest-activity customer meeting the criteria
-        SELECT customer_id
-        FROM customer
-        WHERE
-            (SELECT count(*) FROM rental r WHERE r.customer_id = customer.customer_id) >= 43
-            AND (SELECT count(*) FROM payment p WHERE p.customer_id = customer.customer_id) >= 43
-        ORDER BY
-            (SELECT count(*) FROM rental r WHERE r.customer_id = customer.customer_id) DESC,
-            (SELECT count(*) FROM payment p WHERE p.customer_id = customer.customer_id) DESC
-        LIMIT 1
-    )
-RETURNING customer_id, first_name, last_name, email, address_id, last_update;
+FROM high_activity_customer hac
+WHERE c.customer_id = hac.customer_id
+RETURNING c.customer_id, c.store_id, c.first_name, c.last_name, c.email, c.address_id, c.last_update;
 
-COMMIT; 
-------------------------------------------------------------------------
-/*Remove any records related to you (as a customer) from
-all tables except 'Customer' and 'Inventory'
-Rent you favorite movies from the store they are in and
-pay for them (add corresponding records to the database to represent this activity)
-(Note: to insert the payment_date into the table payment, you can create 
-a new partition (see the scripts to install the training database ) or add records for the
-first half of 2017)
-*/
-
-DELETE FROM payment
-WHERE customer_id = (
-    SELECT customer_id FROM customer WHERE first_name = 'MARVIN' AND last_name = 'HENDERS'
-);
-
--- 2. DELETE Rental records
--- This must be done after payment records are deleted (or cascaded) to satisfy foreign key constraints.
-DELETE FROM rental
-WHERE customer_id = (
-    SELECT customer_id FROM customer WHERE first_name = 'MARVIN' AND last_name = 'HENDERS'
-);
+-- Verification
+SELECT
+    c.customer_id,
+    c.store_id,
+    c.first_name,
+    c.last_name,
+    c.email,
+    c.address_id
+FROM public.customer c
+WHERE LOWER(c.first_name) = 'arham'
+  AND LOWER(c.last_name)  = 'khalid';
 
 COMMIT;
 
--- Verification SELECT: Check that no payment or rental records exist for the customer
-SELECT
-    (SELECT COUNT(*) FROM rental r WHERE r.customer_id = c.customer_id) AS total_rentals,
-    (SELECT COUNT(*) FROM payment p WHERE p.customer_id = c.customer_id) AS total_payments
-FROM customer c
-WHERE first_name = 'MARVIN' AND last_name = 'HENDERS';
 
+/* 
+   PART 3 – REMOVE YOUR RENTAL/PAYMENT RECORDS
+ */
+
+SELECT
+    c.customer_id,
+    c.store_id,
+    c.first_name,
+    c.last_name
+FROM public.customer c
+WHERE LOWER(c.first_name) = 'arham'
+  AND LOWER(c.last_name)  = 'khalid';
+
+DELETE FROM public.payment p
+WHERE p.customer_id = (
+    SELECT c.customer_id
+    FROM public.customer c
+    WHERE LOWER(c.first_name) = 'arham'
+      AND LOWER(c.last_name)  = 'khalid'
+    FETCH FIRST 1 ROW ONLY
+)
+RETURNING p.payment_id, p.customer_id, p.rental_id, p.amount, p.payment_date;
+
+DELETE FROM public.rental r
+WHERE r.customer_id = (
+    SELECT c.customer_id
+    FROM public.customer c
+    WHERE LOWER(c.first_name) = 'arham'
+      AND LOWER(c.last_name)  = 'khalid'
+    FETCH FIRST 1 ROW ONLY
+)
+RETURNING r.rental_id, r.customer_id, r.inventory_id, r.rental_date, r.return_date;
+
+SELECT
+    c.customer_id,
+    (SELECT COUNT(*) FROM public.rental  r WHERE r.customer_id = c.customer_id) AS total_rentals,
+    (SELECT COUNT(*) FROM public.payment p WHERE p.customer_id = c.customer_id) AS total_payments
+FROM public.customer c
+WHERE LOWER(c.first_name) = 'arham'
+  AND LOWER(c.last_name)  = 'khalid';
+
+COMMIT;
+
+
+/*
+   PART 4 – RENT FAVORITE MOVIES AGAIN AND PAY FOR THEM
+   Requirements:
+  */
 
 WITH customer_data AS (
-    SELECT customer_id, store_id FROM customer WHERE first_name = 'MARVIN' AND last_name = 'HENDERS'
-),
-staff_data AS (
-    SELECT staff_id FROM staff LIMIT 1 -- Dynamically gets one staff ID
-),
-film_rental_data AS (
-    -- Get film details and calculate the return date
     SELECT
-        film_id,
-        title,
-        rental_rate, -- Unique reference for rental rate
-        (CURRENT_DATE + interval '1 day') AS rental_date,
-        (CURRENT_DATE + interval '1 day' + (rental_duration || ' days')::interval) AS return_date
-    FROM film
-    WHERE title IN ('Inception', 'Pulp Fiction', 'The Matrix')
+        c.customer_id,
+        c.store_id
+    FROM public.customer c
+    WHERE LOWER(c.first_name) = 'arham'
+      AND LOWER(c.last_name)  = 'khalid'
+    FETCH FIRST 1 ROW ONLY
 ),
--- Insert the RENTAL records first
-inserted_rentals AS (
-    INSERT INTO rental (rental_date, inventory_id, customer_id, staff_id, return_date, last_update)
+store_staff AS (
+    SELECT s.staff_id
+    FROM public.staff s
+    INNER JOIN customer_data cd
+        ON s.store_id = cd.store_id
+    ORDER BY s.staff_id
+    FETCH FIRST 1 ROW ONLY
+),
+fav_films AS (
     SELECT
-        frd.rental_date,
-        (SELECT inventory_id FROM inventory i WHERE i.film_id = frd.film_id AND i.store_id = cd.store_id LIMIT 1) AS inventory_id,
+        f.film_id,
+        f.title,
+        f.rental_rate,
+        f.rental_duration
+    FROM public.film f
+    WHERE LOWER(f.title) IN ('inception', 'pulp fiction', 'the matrix')
+),
+customer_inventory AS (
+    -- Inventory for favorite films in your store
+    SELECT
         cd.customer_id,
-        sd.staff_id,
-        frd.return_date,
-        CURRENT_DATE -- last_update is correctly used in the 'rental' table
-    FROM film_rental_data frd
-    CROSS JOIN customer_data cd
-    CROSS JOIN staff_data sd
-    -- Rerunnability check: Do not insert if a rental record for this film, customer, and rental date already exists.
-    WHERE NOT EXISTS (
-        SELECT 1 FROM rental r
-        WHERE r.customer_id = cd.customer_id
-        AND r.rental_date = frd.rental_date
+        cd.store_id,
+        ff.film_id,
+        ff.title,
+        ff.rental_rate,
+        ff.rental_duration,
+        i.inventory_id
+    FROM customer_data cd
+    INNER JOIN fav_films ff
+        ON TRUE
+    INNER JOIN public.inventory i
+        ON i.film_id = ff.film_id
+       AND i.store_id = cd.store_id
+),
+inserted_rentals AS (
+    INSERT INTO public.rental (
+        rental_date,
+        inventory_id,
+        customer_id,
+        return_date,
+        staff_id,
+        last_update
     )
-    RETURNING rental_id, customer_id, rental_date, inventory_id
+    SELECT
+        CURRENT_DATE AS rental_date,
+        ci.inventory_id,
+        ci.customer_id,
+        CURRENT_DATE + (ci.rental_duration) AS return_date,  
+        (SELECT staff_id FROM store_staff),
+        CURRENT_DATE AS last_update
+    FROM customer_inventory ci
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM public.rental r
+        WHERE r.customer_id  = ci.customer_id
+          AND r.inventory_id = ci.inventory_id
+    )
+    RETURNING rental_id, customer_id, inventory_id, rental_date, return_date
+),
+inserted_payments AS (
+    INSERT INTO public.payment (
+        customer_id,
+        staff_id,
+        rental_id,
+        amount,
+        payment_date,
+        last_update
+    )
+    SELECT
+        ir.customer_id,
+        (SELECT staff_id FROM store_staff),
+        ir.rental_id,
+        ff.rental_rate,
+        DATE '2017-01-01' AS payment_date,   -- first half of 2017
+        CURRENT_DATE AS last_update
+    FROM inserted_rentals ir
+    INNER JOIN public.inventory i
+        ON i.inventory_id = ir.inventory_id
+    INNER JOIN fav_films ff
+        ON ff.film_id = i.film_id
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM public.payment p
+        WHERE p.rental_id = ir.rental_id
+    )
+    RETURNING payment_id, customer_id, rental_id, amount, payment_date
 )
--- Now insert the PAYMENT records using the new rental_ids
--- NOTE: 'last_update' IS EXCLUDED from this insert.
-INSERT INTO payment (customer_id, staff_id, rental_id, amount, payment_date)
+SELECT *
+FROM inserted_payments;
+
+-- Verification: rentals and payments for you & favorite films
 SELECT
-    ir.customer_id,
-    sd.staff_id,
-    ir.rental_id,
-    frd.rental_rate,
-    '2017-01-01'::date 
-FROM inserted_rentals ir
-JOIN film_rental_data frd ON frd.film_id = (
-    SELECT film_id FROM inventory i WHERE i.inventory_id = ir.inventory_id
-)
-CROSS JOIN staff_data sd
-RETURNING payment_id, rental_id, amount, payment_date;
+    f.title,
+    r.rental_date,
+    r.return_date,
+    p.amount,
+    p.payment_date
+FROM public.customer c
+INNER JOIN public.rental r
+    ON r.customer_id = c.customer_id
+INNER JOIN public.payment p
+    ON p.rental_id = r.rental_id
+INNER JOIN public.inventory i
+    ON i.inventory_id = r.inventory_id
+INNER JOIN public.film f
+    ON f.film_id = i.film_id
+WHERE LOWER(c.first_name) = 'arham'
+  AND LOWER(c.last_name)  = 'khalid'
+  AND LOWER(f.title) IN ('inception', 'pulp fiction', 'the matrix')
+ORDER BY f.title;
 
-COMMIT
-
---------------------------------------------------------------------------------
+COMMIT;
