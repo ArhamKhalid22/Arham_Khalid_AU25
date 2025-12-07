@@ -1,11 +1,11 @@
 
-
 BEGIN;
 
 CREATE SCHEMA IF NOT EXISTS metro;
 SET search_path TO metro;
 
--- Table: lines
+
+-- 1. Table: lines
 CREATE TABLE IF NOT EXISTS lines (
     line_id     INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     line_name   VARCHAR(100) NOT NULL UNIQUE,
@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS lines (
     CONSTRAINT chk_lines_name_nonempty CHECK (line_name <> '')
 );
 
--- Table: stations
+-- 2. Table: stations
 CREATE TABLE IF NOT EXISTS stations (
     station_id          INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     station_name        VARCHAR(100) NOT NULL UNIQUE,
@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS stations (
     CONSTRAINT chk_stations_open_date CHECK (open_date >= DATE '2000-01-01')
 );
 
--- Table: trains
+-- 3. Table: trains
 CREATE TABLE IF NOT EXISTS trains (
     train_id      INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     model_name    VARCHAR(100),
@@ -32,22 +32,20 @@ CREATE TABLE IF NOT EXISTS trains (
     status        VARCHAR(50) NOT NULL,
     CONSTRAINT chk_trains_capacity_nonneg CHECK (capacity >= 0),
     CONSTRAINT chk_trains_purchase_date CHECK (purchase_date IS NULL OR purchase_date >= DATE '2000-01-01'),
-    -- Check Constraint: Limited set of values (Enum simulation)
     CONSTRAINT chk_trains_status CHECK (status IN ('Active', 'In Repair', 'Retired'))
 );
 
--- Table: roles
+-- 4. Table: roles
 CREATE TABLE IF NOT EXISTS roles (
     role_id   INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     role_name VARCHAR(100) NOT NULL UNIQUE
 );
 
--- Table: employees
+-- 5. Table: employees
 CREATE TABLE IF NOT EXISTS employees (
     employee_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     first_name  VARCHAR(100) NOT NULL,
     last_name   VARCHAR(100) NOT NULL,
-    -- Default Constraint: Replaces CHECK constraint for convenience, though CHECK remains for validity
     hire_date   DATE NOT NULL DEFAULT CURRENT_DATE, 
     role_id     INT  NOT NULL,
     manager_id  INT,
@@ -56,7 +54,7 @@ CREATE TABLE IF NOT EXISTS employees (
     CONSTRAINT chk_employees_hire_date CHECK (hire_date >= DATE '2000-01-01')
 );
 
--- Table: ticket_types
+-- 6. Table: ticket_types
 CREATE TABLE IF NOT EXISTS ticket_types (
     ticket_type_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     type_name      VARCHAR(100) NOT NULL UNIQUE,
@@ -65,7 +63,7 @@ CREATE TABLE IF NOT EXISTS ticket_types (
     CONSTRAINT chk_ticket_types_price_nonneg CHECK (base_price >= 0)
 );
 
--- Table: promotions
+-- 7. Table: promotions
 CREATE TABLE IF NOT EXISTS promotions (
     promotion_id     INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     promotion_name   VARCHAR(100) NOT NULL UNIQUE,
@@ -76,7 +74,7 @@ CREATE TABLE IF NOT EXISTS promotions (
     CONSTRAINT chk_promotions_date_range CHECK (end_date >= start_date)
 );
 
--- Table: schedules
+-- 8. Table: schedules
 CREATE TABLE IF NOT EXISTS schedules (
     schedule_id    INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     schedule_name  VARCHAR(100) NOT NULL,
@@ -87,7 +85,7 @@ CREATE TABLE IF NOT EXISTS schedules (
     CONSTRAINT chk_schedules_frequency CHECK (frequency_mins > 0)
 );
 
--- Table: line_stations (Junction)
+-- 9. Table: line_stations (Junction)
 CREATE TABLE IF NOT EXISTS line_stations (
     line_id       INT NOT NULL,
     station_id    INT NOT NULL,
@@ -98,7 +96,7 @@ CREATE TABLE IF NOT EXISTS line_stations (
     CONSTRAINT chk_line_stations_sequence CHECK (stop_sequence > 0)
 );
 
--- Table: trips
+-- 10. Table: trips
 CREATE TABLE IF NOT EXISTS trips (
     trip_id     INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     trip_date   DATE NOT NULL,
@@ -111,7 +109,7 @@ CREATE TABLE IF NOT EXISTS trips (
     CONSTRAINT chk_trips_date CHECK (trip_date >= DATE '2000-01-01')
 );
 
--- Table: stop_times
+-- 11. Table: stop_times
 CREATE TABLE IF NOT EXISTS stop_times (
     stop_time_id   INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     trip_id        INT NOT NULL,
@@ -122,21 +120,25 @@ CREATE TABLE IF NOT EXISTS stop_times (
     FOREIGN KEY (station_id) REFERENCES stations(station_id)
 );
 
--- Table: maintenance_logs
-
+-- 12. Table: maintenance_logs
 CREATE TABLE IF NOT EXISTS maintenance_logs (
     log_id           INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    asset_type       VARCHAR(50) NOT NULL,
-    asset_id         INT NOT NULL,
     maintenance_date DATE NOT NULL,
     description      TEXT NOT NULL,
     technician_id    INT NOT NULL,
+    train_id         INT,
+    station_id       INT,
     FOREIGN KEY (technician_id) REFERENCES employees(employee_id),
+    FOREIGN KEY (train_id)      REFERENCES trains(train_id),
+    FOREIGN KEY (station_id)    REFERENCES stations(station_id),
     CONSTRAINT chk_maint_date CHECK (maintenance_date >= DATE '2000-01-01'),
-    CONSTRAINT chk_maint_asset_type CHECK (asset_type IN ('Train','Station','Track'))
+    CONSTRAINT chk_maint_exclusive_asset CHECK (
+        (train_id IS NOT NULL AND station_id IS NULL) OR 
+        (train_id IS NULL AND station_id IS NOT NULL)
+    )
 );
 
--- Table: ticket_type_promotions (Junction)
+-- 13. Table: ticket_type_promotions (Junction)
 CREATE TABLE IF NOT EXISTS ticket_type_promotions (
     ticket_type_id INT NOT NULL,
     promotion_id   INT NOT NULL,
@@ -147,8 +149,7 @@ CREATE TABLE IF NOT EXISTS ticket_type_promotions (
 
 COMMIT;
 
-
-
+-- DATA POPULATION
 BEGIN;
 
 -- Lines
@@ -184,34 +185,35 @@ INSERT INTO roles (role_name) SELECT 'Station Agent' WHERE NOT EXISTS (SELECT 1 
 INSERT INTO roles (role_name) SELECT 'Technician' WHERE NOT EXISTS (SELECT 1 FROM roles WHERE UPPER(role_name) = UPPER('Technician'));
 
 -- Employees
+-- Note: Using LIMIT 1 in subqueries ensures we handle cases where duplicates might already exist gracefully.
 INSERT INTO employees (first_name, last_name, hire_date, role_id, manager_id)
-SELECT 'Ada','Lovelace','2010-01-15', (SELECT role_id FROM roles WHERE role_name='Manager'), NULL
-WHERE NOT EXISTS (SELECT 1 FROM employees WHERE first_name='Ada' AND last_name='Lovelace');
+SELECT 'Ada','Lovelace','2010-01-15', (SELECT role_id FROM roles WHERE UPPER(role_name)=UPPER('Manager') LIMIT 1), NULL
+WHERE NOT EXISTS (SELECT 1 FROM employees WHERE UPPER(first_name)=UPPER('Ada') AND UPPER(last_name)=UPPER('Lovelace'));
 
 INSERT INTO employees (first_name, last_name, hire_date, role_id, manager_id)
-SELECT 'Grace','Hopper','2012-07-22', (SELECT role_id FROM roles WHERE role_name='Train Driver'), (SELECT employee_id FROM employees WHERE first_name='Ada')
-WHERE NOT EXISTS (SELECT 1 FROM employees WHERE first_name='Grace' AND last_name='Hopper');
+SELECT 'Grace','Hopper','2012-07-22', (SELECT role_id FROM roles WHERE UPPER(role_name)=UPPER('Train Driver') LIMIT 1), (SELECT employee_id FROM employees WHERE UPPER(first_name)=UPPER('Ada') LIMIT 1)
+WHERE NOT EXISTS (SELECT 1 FROM employees WHERE UPPER(first_name)=UPPER('Grace') AND UPPER(last_name)=UPPER('Hopper'));
 
 INSERT INTO employees (first_name, last_name, hire_date, role_id, manager_id)
-SELECT 'Charles','Babbage','2018-11-01', (SELECT role_id FROM roles WHERE role_name='Technician'), (SELECT employee_id FROM employees WHERE first_name='Ada')
-WHERE NOT EXISTS (SELECT 1 FROM employees WHERE first_name='Charles' AND last_name='Babbage');
+SELECT 'Charles','Babbage','2018-11-01', (SELECT role_id FROM roles WHERE UPPER(role_name)=UPPER('Technician') LIMIT 1), (SELECT employee_id FROM employees WHERE UPPER(first_name)=UPPER('Ada') LIMIT 1)
+WHERE NOT EXISTS (SELECT 1 FROM employees WHERE UPPER(first_name)=UPPER('Charles') AND UPPER(last_name)=UPPER('Babbage'));
 
 INSERT INTO employees (first_name, last_name, hire_date, role_id, manager_id)
-SELECT 'Tim','Berners-Lee','2022-02-10', (SELECT role_id FROM roles WHERE role_name='Station Agent'), (SELECT employee_id FROM employees WHERE first_name='Ada')
-WHERE NOT EXISTS (SELECT 1 FROM employees WHERE first_name='Tim' AND last_name='Berners-Lee');
+SELECT 'Tim','Berners-Lee','2022-02-10', (SELECT role_id FROM roles WHERE UPPER(role_name)=UPPER('Station Agent') LIMIT 1), (SELECT employee_id FROM employees WHERE UPPER(first_name)=UPPER('Ada') LIMIT 1)
+WHERE NOT EXISTS (SELECT 1 FROM employees WHERE UPPER(first_name)=UPPER('Tim') AND UPPER(last_name)=UPPER('Berners-Lee'));
 
 -- Trains
 INSERT INTO trains (model_name, capacity, purchase_date, status)
 SELECT 'Siemens Velaro', 850, '2015-01-20', 'Active'
-WHERE NOT EXISTS (SELECT 1 FROM trains WHERE model_name='Siemens Velaro' AND status='Active');
+WHERE NOT EXISTS (SELECT 1 FROM trains WHERE UPPER(model_name)=UPPER('Siemens Velaro') AND UPPER(status)=UPPER('Active'));
 
 INSERT INTO trains (model_name, capacity, purchase_date, status)
 SELECT 'Bombardier Movia', 820, '2018-06-15', 'Active'
-WHERE NOT EXISTS (SELECT 1 FROM trains WHERE model_name='Bombardier Movia' AND status='Active');
+WHERE NOT EXISTS (SELECT 1 FROM trains WHERE UPPER(model_name)=UPPER('Bombardier Movia') AND UPPER(status)=UPPER('Active'));
 
 INSERT INTO trains (model_name, capacity, purchase_date, status)
 SELECT 'Siemens Velaro', 850, '2015-01-20', 'In Repair'
-WHERE NOT EXISTS (SELECT 1 FROM trains WHERE model_name='Siemens Velaro' AND status='In Repair');
+WHERE NOT EXISTS (SELECT 1 FROM trains WHERE UPPER(model_name)=UPPER('Siemens Velaro') AND UPPER(status)=UPPER('In Repair'));
 
 -- Ticket Types
 INSERT INTO ticket_types (type_name, base_price, validity_days)
@@ -237,72 +239,85 @@ WHERE NOT EXISTS (SELECT 1 FROM promotions WHERE UPPER(promotion_name) = UPPER('
 
 -- Schedules
 INSERT INTO schedules (schedule_name, line_id, direction, frequency_mins)
-SELECT 'Weekday Peak', (SELECT line_id FROM lines WHERE line_name='Central Line'), 'Northbound', 5
-WHERE NOT EXISTS (SELECT 1 FROM schedules WHERE schedule_name='Weekday Peak');
+SELECT 'Weekday Peak', (SELECT line_id FROM lines WHERE UPPER(line_name)=UPPER('Central Line')), 'Northbound', 5
+WHERE NOT EXISTS (SELECT 1 FROM schedules WHERE UPPER(schedule_name)=UPPER('Weekday Peak'));
 
 INSERT INTO schedules (schedule_name, line_id, direction, frequency_mins)
-SELECT 'Weekend All Day', (SELECT line_id FROM lines WHERE line_name='Circle Line'), 'Clockwise', 8
-WHERE NOT EXISTS (SELECT 1 FROM schedules WHERE schedule_name='Weekend All Day');
+SELECT 'Weekend All Day', (SELECT line_id FROM lines WHERE UPPER(line_name)=UPPER('Circle Line')), 'Clockwise', 8
+WHERE NOT EXISTS (SELECT 1 FROM schedules WHERE UPPER(schedule_name)=UPPER('Weekend All Day'));
 
 -- Line Stations
 INSERT INTO line_stations (line_id, station_id, stop_sequence)
-SELECT (SELECT line_id FROM lines WHERE line_name='Central Line'), (SELECT station_id FROM stations WHERE station_name='Downtown Central'), 1
-WHERE NOT EXISTS (SELECT 1 FROM line_stations WHERE line_id=(SELECT line_id FROM lines WHERE line_name='Central Line') AND station_id=(SELECT station_id FROM stations WHERE station_name='Downtown Central'));
+SELECT (SELECT line_id FROM lines WHERE UPPER(line_name)=UPPER('Central Line')), (SELECT station_id FROM stations WHERE UPPER(station_name)=UPPER('Downtown Central')), 1
+WHERE NOT EXISTS (SELECT 1 FROM line_stations WHERE line_id=(SELECT line_id FROM lines WHERE UPPER(line_name)=UPPER('Central Line')) AND station_id=(SELECT station_id FROM stations WHERE UPPER(station_name)=UPPER('Downtown Central')));
 
 INSERT INTO line_stations (line_id, station_id, stop_sequence)
-SELECT (SELECT line_id FROM lines WHERE line_name='Central Line'), (SELECT station_id FROM stations WHERE station_name='North Park'), 2
-WHERE NOT EXISTS (SELECT 1 FROM line_stations WHERE line_id=(SELECT line_id FROM lines WHERE line_name='Central Line') AND station_id=(SELECT station_id FROM stations WHERE station_name='North Park'));
+SELECT (SELECT line_id FROM lines WHERE UPPER(line_name)=UPPER('Central Line')), (SELECT station_id FROM stations WHERE UPPER(station_name)=UPPER('North Park')), 2
+WHERE NOT EXISTS (SELECT 1 FROM line_stations WHERE line_id=(SELECT line_id FROM lines WHERE UPPER(line_name)=UPPER('Central Line')) AND station_id=(SELECT station_id FROM stations WHERE UPPER(station_name)=UPPER('North Park')));
 
 INSERT INTO line_stations (line_id, station_id, stop_sequence)
-SELECT (SELECT line_id FROM lines WHERE line_name='Circle Line'), (SELECT station_id FROM stations WHERE station_name='West End'), 1
-WHERE NOT EXISTS (SELECT 1 FROM line_stations WHERE line_id=(SELECT line_id FROM lines WHERE line_name='Circle Line') AND station_id=(SELECT station_id FROM stations WHERE station_name='West End'));
+SELECT (SELECT line_id FROM lines WHERE UPPER(line_name)=UPPER('Circle Line')), (SELECT station_id FROM stations WHERE UPPER(station_name)=UPPER('West End')), 1
+WHERE NOT EXISTS (SELECT 1 FROM line_stations WHERE line_id=(SELECT line_id FROM lines WHERE UPPER(line_name)=UPPER('Circle Line')) AND station_id=(SELECT station_id FROM stations WHERE UPPER(station_name)=UPPER('West End')));
 
 INSERT INTO line_stations (line_id, station_id, stop_sequence)
-SELECT (SELECT line_id FROM lines WHERE line_name='Circle Line'), (SELECT station_id FROM stations WHERE station_name='City Hall'), 2
-WHERE NOT EXISTS (SELECT 1 FROM line_stations WHERE line_id=(SELECT line_id FROM lines WHERE line_name='Circle Line') AND station_id=(SELECT station_id FROM stations WHERE station_name='City Hall'));
+SELECT (SELECT line_id FROM lines WHERE UPPER(line_name)=UPPER('Circle Line')), (SELECT station_id FROM stations WHERE UPPER(station_name)=UPPER('City Hall')), 2
+WHERE NOT EXISTS (SELECT 1 FROM line_stations WHERE line_id=(SELECT line_id FROM lines WHERE UPPER(line_name)=UPPER('Circle Line')) AND station_id=(SELECT station_id FROM stations WHERE UPPER(station_name)=UPPER('City Hall')));
 
 -- Trips
 INSERT INTO trips (trip_date, schedule_id, train_id, driver_id)
-SELECT '2025-01-24', (SELECT schedule_id FROM schedules WHERE schedule_name='Weekday Peak'), (SELECT train_id FROM trains WHERE model_name='Siemens Velaro' LIMIT 1), (SELECT employee_id FROM employees WHERE first_name='Grace')
-WHERE NOT EXISTS (SELECT 1 FROM trips WHERE trip_date='2025-01-24' AND schedule_id=(SELECT schedule_id FROM schedules WHERE schedule_name='Weekday Peak'));
+SELECT '2025-01-24', 
+       (SELECT schedule_id FROM schedules WHERE UPPER(schedule_name)=UPPER('Weekday Peak') LIMIT 1), 
+       (SELECT train_id FROM trains WHERE UPPER(model_name)=UPPER('Siemens Velaro') LIMIT 1), 
+       (SELECT employee_id FROM employees WHERE UPPER(first_name)=UPPER('Grace') LIMIT 1)
+WHERE NOT EXISTS (SELECT 1 FROM trips WHERE trip_date='2025-01-24' AND schedule_id=(SELECT schedule_id FROM schedules WHERE UPPER(schedule_name)=UPPER('Weekday Peak') LIMIT 1));
 
 INSERT INTO trips (trip_date, schedule_id, train_id, driver_id)
-SELECT '2025-01-25', (SELECT schedule_id FROM schedules WHERE schedule_name='Weekend All Day'), (SELECT train_id FROM trains WHERE model_name='Bombardier Movia' LIMIT 1), (SELECT employee_id FROM employees WHERE first_name='Grace')
-WHERE NOT EXISTS (SELECT 1 FROM trips WHERE trip_date='2025-01-25' AND schedule_id=(SELECT schedule_id FROM schedules WHERE schedule_name='Weekend All Day'));
+SELECT '2025-01-25', 
+       (SELECT schedule_id FROM schedules WHERE UPPER(schedule_name)=UPPER('Weekend All Day') LIMIT 1), 
+       (SELECT train_id FROM trains WHERE UPPER(model_name)=UPPER('Bombardier Movia') LIMIT 1), 
+       (SELECT employee_id FROM employees WHERE UPPER(first_name)=UPPER('Grace') LIMIT 1)
+WHERE NOT EXISTS (SELECT 1 FROM trips WHERE trip_date='2025-01-25' AND schedule_id=(SELECT schedule_id FROM schedules WHERE UPPER(schedule_name)=UPPER('Weekend All Day') LIMIT 1));
 
 -- Stop Times
 INSERT INTO stop_times (trip_id, station_id, arrival_time, departure_time)
-SELECT (SELECT MIN(trip_id) FROM trips), (SELECT station_id FROM stations WHERE station_name='Downtown Central'), NULL, '08:00'
-WHERE NOT EXISTS (SELECT 1 FROM stop_times WHERE trip_id=(SELECT MIN(trip_id) FROM trips) AND station_id=(SELECT station_id FROM stations WHERE station_name='Downtown Central'));
+SELECT (SELECT MIN(trip_id) FROM trips), (SELECT station_id FROM stations WHERE UPPER(station_name)=UPPER('Downtown Central') LIMIT 1), NULL, '08:00'
+WHERE NOT EXISTS (SELECT 1 FROM stop_times WHERE trip_id=(SELECT MIN(trip_id) FROM trips) AND station_id=(SELECT station_id FROM stations WHERE UPPER(station_name)=UPPER('Downtown Central') LIMIT 1));
 
 INSERT INTO stop_times (trip_id, station_id, arrival_time, departure_time)
-SELECT (SELECT MIN(trip_id) FROM trips), (SELECT station_id FROM stations WHERE station_name='North Park'), '08:05', '08:06'
-WHERE NOT EXISTS (SELECT 1 FROM stop_times WHERE trip_id=(SELECT MIN(trip_id) FROM trips) AND station_id=(SELECT station_id FROM stations WHERE station_name='North Park'));
-
+SELECT (SELECT MIN(trip_id) FROM trips), (SELECT station_id FROM stations WHERE UPPER(station_name)=UPPER('North Park') LIMIT 1), '08:05', '08:06'
+WHERE NOT EXISTS (SELECT 1 FROM stop_times WHERE trip_id=(SELECT MIN(trip_id) FROM trips) AND station_id=(SELECT station_id FROM stations WHERE UPPER(station_name)=UPPER('North Park') LIMIT 1));
 -- Maintenance Logs
-INSERT INTO maintenance_logs (asset_type, asset_id, maintenance_date, description, technician_id)
-SELECT 'Train', (SELECT MAX(train_id) FROM trains), '2025-10-22', 'Replaced faulty brake pads', (SELECT employee_id FROM employees WHERE last_name='Babbage')
-WHERE NOT EXISTS (SELECT 1 FROM maintenance_logs WHERE asset_type='Train' AND maintenance_date='2025-10-22');
+INSERT INTO maintenance_logs (train_id, station_id, maintenance_date, description, technician_id)
+SELECT 
+    (SELECT MAX(train_id) FROM trains), 
+    NULL,
+    '2025-10-22', 
+    'Replaced faulty brake pads', 
+    (SELECT employee_id FROM employees WHERE UPPER(last_name)=UPPER('Babbage') LIMIT 1)
+WHERE NOT EXISTS (SELECT 1 FROM maintenance_logs WHERE train_id=(SELECT MAX(train_id) FROM trains) AND maintenance_date='2025-10-22');
 
-INSERT INTO maintenance_logs (asset_type, asset_id, maintenance_date, description, technician_id)
-SELECT 'Station', (SELECT station_id FROM stations WHERE station_name='West End'), '2025-09-15', 'Repaired escalator motor', (SELECT employee_id FROM employees WHERE last_name='Babbage')
-WHERE NOT EXISTS (SELECT 1 FROM maintenance_logs WHERE asset_type='Station' AND maintenance_date='2025-09-15');
+INSERT INTO maintenance_logs (train_id, station_id, maintenance_date, description, technician_id)
+SELECT 
+    NULL,
+    (SELECT station_id FROM stations WHERE UPPER(station_name)=UPPER('West End') LIMIT 1), 
+    '2025-09-15', 
+    'Repaired escalator motor', 
+    (SELECT employee_id FROM employees WHERE UPPER(last_name)=UPPER('Babbage') LIMIT 1)
+WHERE NOT EXISTS (SELECT 1 FROM maintenance_logs WHERE station_id=(SELECT station_id FROM stations WHERE UPPER(station_name)=UPPER('West End') LIMIT 1) AND maintenance_date='2025-09-15');
 
 -- Ticket Type Promotions
 INSERT INTO ticket_type_promotions (ticket_type_id, promotion_id)
-SELECT (SELECT ticket_type_id FROM ticket_types WHERE type_name='Daily Pass'), (SELECT promotion_id FROM promotions WHERE promotion_name='Weekend Saver')
-WHERE NOT EXISTS (SELECT 1 FROM ticket_type_promotions WHERE ticket_type_id=(SELECT ticket_type_id FROM ticket_types WHERE type_name='Daily Pass'));
+SELECT (SELECT ticket_type_id FROM ticket_types WHERE UPPER(type_name)=UPPER('Daily Pass') LIMIT 1), (SELECT promotion_id FROM promotions WHERE UPPER(promotion_name)=UPPER('Weekend Saver') LIMIT 1)
+WHERE NOT EXISTS (SELECT 1 FROM ticket_type_promotions WHERE ticket_type_id=(SELECT ticket_type_id FROM ticket_types WHERE UPPER(type_name)=UPPER('Daily Pass') LIMIT 1));
 
 INSERT INTO ticket_type_promotions (ticket_type_id, promotion_id)
-SELECT (SELECT ticket_type_id FROM ticket_types WHERE type_name='Monthly Pass'), (SELECT promotion_id FROM promotions WHERE promotion_name='Student Discount')
-WHERE NOT EXISTS (SELECT 1 FROM ticket_type_promotions WHERE ticket_type_id=(SELECT ticket_type_id FROM ticket_types WHERE type_name='Monthly Pass'));
+SELECT (SELECT ticket_type_id FROM ticket_types WHERE UPPER(type_name)=UPPER('Monthly Pass') LIMIT 1), (SELECT promotion_id FROM promotions WHERE UPPER(promotion_name)=UPPER('Student Discount') LIMIT 1)
+WHERE NOT EXISTS (SELECT 1 FROM ticket_type_promotions WHERE ticket_type_id=(SELECT ticket_type_id FROM ticket_types WHERE UPPER(type_name)=UPPER('Monthly Pass') LIMIT 1));
 
 COMMIT;
 
-
-
+-- ADD AUDIT COLUMN
 BEGIN;
-
 ALTER TABLE lines                   ADD COLUMN IF NOT EXISTS record_ts DATE NOT NULL DEFAULT CURRENT_DATE;
 ALTER TABLE stations                ADD COLUMN IF NOT EXISTS record_ts DATE NOT NULL DEFAULT CURRENT_DATE;
 ALTER TABLE trains                  ADD COLUMN IF NOT EXISTS record_ts DATE NOT NULL DEFAULT CURRENT_DATE;
@@ -316,10 +331,9 @@ ALTER TABLE maintenance_logs        ADD COLUMN IF NOT EXISTS record_ts DATE NOT 
 ALTER TABLE ticket_types            ADD COLUMN IF NOT EXISTS record_ts DATE NOT NULL DEFAULT CURRENT_DATE;
 ALTER TABLE promotions              ADD COLUMN IF NOT EXISTS record_ts DATE NOT NULL DEFAULT CURRENT_DATE;
 ALTER TABLE ticket_type_promotions  ADD COLUMN IF NOT EXISTS record_ts DATE NOT NULL DEFAULT CURRENT_DATE;
-
 COMMIT;
 
-
+-- VALIDATION CHECKS
 SELECT 'lines' AS table_name, COUNT(*) AS null_count FROM lines WHERE record_ts IS NULL
 UNION ALL
 SELECT 'stations',            COUNT(*) FROM stations WHERE record_ts IS NULL
@@ -328,6 +342,8 @@ SELECT 'trains',              COUNT(*) FROM trains WHERE record_ts IS NULL
 UNION ALL
 SELECT 'employees',           COUNT(*) FROM employees WHERE record_ts IS NULL
 UNION ALL
-SELECT 'trips',               COUNT(*) FROM trips WHERE record_ts IS NULL;
+SELECT 'trips',               COUNT(*) FROM trips WHERE record_ts IS NULL
+UNION ALL
+SELECT 'maintenance_logs',    COUNT(*) FROM maintenance_logs WHERE record_ts IS NULL;
 
-SELECT * FROM ticket_types;
+
