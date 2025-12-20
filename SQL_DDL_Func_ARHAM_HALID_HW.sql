@@ -1,7 +1,6 @@
-
--- =============================================
+-- =========================================================
 -- TASK 1: Create View 'sales_revenue_by_category_qtr'
--- =============================================
+-- =========================================================
 
 DROP VIEW IF EXISTS public.sales_revenue_by_category_qtr;
 
@@ -9,32 +8,27 @@ CREATE OR REPLACE VIEW public.sales_revenue_by_category_qtr AS
 SELECT 
     c.name AS category,
     SUM(p.amount) AS total_sales_revenue
-FROM payment p
-JOIN rental r ON p.rental_id = r.rental_id
-JOIN inventory i ON r.inventory_id = i.inventory_id
-JOIN film_category fc ON i.film_id = fc.film_id
-JOIN category c ON fc.category_id = c.category_id
+FROM public.payment p
+JOIN public.rental r ON p.rental_id = r.rental_id
+JOIN public.inventory i ON r.inventory_id = i.inventory_id
+JOIN public.film_category fc ON i.film_id = fc.film_id
+JOIN public.category c ON fc.category_id = c.category_id
 WHERE 
-    -- Condition 1: Check if the Quarter matches the current quarter
+    -- Condition: Check if Quarter and Year match the current date
     EXTRACT(QUARTER FROM p.payment_date) = EXTRACT(QUARTER FROM CURRENT_DATE)
-    -- Condition 2: Explicitly check if the Year matches the current year
     AND EXTRACT(YEAR FROM p.payment_date) = EXTRACT(YEAR FROM CURRENT_DATE)
 GROUP BY c.name
 HAVING SUM(p.amount) > 0
 ORDER BY total_sales_revenue DESC;
 
--- Verification
-SELECT * FROM public.sales_revenue_by_category_qtr;
-
-
-
--- TASK 2: SQL Function
+-- =========================================================
+-- TASK 2: SQL Function 'get_sales_revenue_by_category_qtr'
+-- =========================================================
 
 DROP FUNCTION IF EXISTS public.get_sales_revenue_by_category_qtr(date);
 
-
 CREATE OR REPLACE FUNCTION public.get_sales_revenue_by_category_qtr(
-    p_choose_date DATE DEFAULT CURRENT_DATE     -- Input date representing year + quarter
+    p_choose_date DATE DEFAULT CURRENT_DATE
 )
 RETURNS TABLE(
     category TEXT,
@@ -46,26 +40,22 @@ AS $$
     SELECT 
         c.name AS category,
         SUM(p.amount) AS total_sales_revenue
-    FROM payment p
-    JOIN rental r       ON p.rental_id = r.rental_id
-    JOIN inventory i    ON r.inventory_id = i.inventory_id
-    JOIN film_category fc ON i.film_id = fc.film_id
-    JOIN category c     ON fc.category_id = c.category_id
+    FROM public.payment p
+    JOIN public.rental r        ON p.rental_id = r.rental_id
+    JOIN public.inventory i     ON r.inventory_id = i.inventory_id
+    JOIN public.film_category fc ON i.film_id = fc.film_id
+    JOIN public.category c      ON fc.category_id = c.category_id
     WHERE 
-        -- Match YEAR of the payment with the YEAR of the chosen date
         EXTRACT(YEAR FROM p.payment_date) = EXTRACT(YEAR FROM p_choose_date)
-
-        -- Match QUARTER of the payment with the QUARTER of the chosen date
         AND EXTRACT(QUARTER FROM p.payment_date) = EXTRACT(QUARTER FROM p_choose_date)
-
     GROUP BY c.name
-    HAVING SUM(p.amount) > 0                     -- Only include categories with sales
-    ORDER BY total_sales_revenue DESC;           -- High-to-low revenue
+    HAVING SUM(p.amount) > 0
+    ORDER BY total_sales_revenue DESC;
 $$;
 
-SELECT * FROM public.get_sales_revenue_by_category_qtr('2005-05-01');
-
--- task 3
+-- =========================================================
+-- TASK 3: Function 'most_popular_film_by_country'
+-- =========================================================
 
 DROP FUNCTION IF EXISTS public.most_popular_film_by_country(TEXT);
 
@@ -85,14 +75,14 @@ AS $$
 DECLARE
     v_country_exists BOOLEAN;
 BEGIN
+    -- Validate input
     IF p_country IS NULL OR TRIM(p_country) = '' THEN
         RAISE EXCEPTION 'Country name cannot be NULL or empty.';
     END IF;
 
+    -- Check if country exists
     SELECT EXISTS (
-        SELECT 1
-        FROM country
-        WHERE country ILIKE p_country
+        SELECT 1 FROM public.country WHERE country ILIKE p_country
     ) INTO v_country_exists;
 
     IF NOT v_country_exists THEN
@@ -114,14 +104,14 @@ BEGIN
                 PARTITION BY co.country
                 ORDER BY COUNT(*) DESC
             ) AS rn
-        FROM rental r
-        JOIN inventory i ON r.inventory_id = i.inventory_id
-        JOIN film f ON f.film_id = i.film_id
-        JOIN language l ON l.language_id = f.language_id
-        JOIN customer cu ON cu.customer_id = r.customer_id
-        JOIN address a ON a.address_id = cu.address_id
-        JOIN city ci ON ci.city_id = a.city_id
-        JOIN country co ON co.country_id = ci.country_id
+        FROM public.rental r
+        JOIN public.inventory i ON r.inventory_id = i.inventory_id
+        JOIN public.film f ON f.film_id = i.film_id
+        JOIN public.language l ON l.language_id = f.language_id
+        JOIN public.customer cu ON cu.customer_id = r.customer_id
+        JOIN public.address a ON a.address_id = cu.address_id
+        JOIN public.city ci ON ci.city_id = a.city_id
+        JOIN public.country co ON co.country_id = ci.country_id
         WHERE co.country ILIKE p_country     
         GROUP BY co.country, f.title, f.rating, l.name, f.length, f.release_year
     )
@@ -136,24 +126,23 @@ BEGIN
     WHERE rn = 1
     ORDER BY country_col;
 
-    -- If no rentals found but country exists
     IF NOT FOUND THEN
         RAISE NOTICE 'Country "%" exists but has no rental records.', p_country;
         RAISE EXCEPTION 'No rental information found for country "%".', p_country;
     END IF;
-
 END;
 $$;
 
-SELECT * FROM core.most_popular_films_by_countries(
-    ARRAY['franCe', 'Brazil', 'united states']
-);
+-- =========================================================
+-- TASK 4: Function 'films_in_stock_by_title' (CORRECTED)
+-- =========================================================
+-- 1. Uses DISTINCT ON to return one row per film.
+-- 2. Sorts by rental_date DESC to get the latest rental.
+-- 3. Explicit public schemas.
 
---task 4
+DROP FUNCTION IF EXISTS public.films_in_stock_by_title(TEXT);
 
-DROP FUNCTION IF EXISTS core.films_in_stock_by_title(TEXT);
-
-CREATE OR REPLACE FUNCTION core.films_in_stock_by_title(
+CREATE OR REPLACE FUNCTION public.films_in_stock_by_title(
     p_pattern TEXT
 )
 RETURNS TABLE(
@@ -170,43 +159,38 @@ DECLARE
     rec RECORD;
     has_results BOOLEAN := FALSE;
 BEGIN
-    -- Validate input
     IF p_pattern IS NULL OR TRIM(p_pattern) = '' THEN
         RAISE EXCEPTION 'Search pattern cannot be NULL or empty.';
     END IF;
 
-    -- Main loop returning each matching record
     FOR rec IN
-        SELECT
-            ROW_NUMBER() OVER (ORDER BY f.title, i.inventory_id) AS rn,
+        SELECT DISTINCT ON (f.title)
+            ROW_NUMBER() OVER (ORDER BY f.title) AS rn,
             f.title AS film_title,
-            l.name::TEXT AS lang_name,    -- FIX: CAST TO TEXT
+            l.name::TEXT AS lang_name,
             CONCAT(cu.first_name, ' ', cu.last_name) AS cust_name,
             r.rental_date
-        FROM film f
-        JOIN language l ON l.language_id = f.language_id
-        JOIN inventory i ON i.film_id = f.film_id
-        LEFT JOIN rental r  
-               ON r.inventory_id = i.inventory_id 
-              AND r.return_date IS NULL
-        LEFT JOIN customer cu 
-               ON cu.customer_id = r.customer_id
+        FROM public.film f
+        JOIN public.language l ON l.language_id = f.language_id
+        JOIN public.inventory i ON i.film_id = f.film_id
+        LEFT JOIN public.rental r ON r.inventory_id = i.inventory_id 
+        LEFT JOIN public.customer cu ON cu.customer_id = r.customer_id
         WHERE f.title ILIKE p_pattern
-
-          -- Stock check: at least one unrented copy available
-          AND EXISTS (
-                SELECT 1
-                FROM inventory i2
-                LEFT JOIN rental r2
-                       ON r2.inventory_id = i2.inventory_id
-                      AND r2.return_date IS NULL
-                WHERE i2.film_id = f.film_id
-                GROUP BY i2.film_id
-                HAVING COUNT(r2.inventory_id) < COUNT(i2.inventory_id)
+          -- Check: Total Inventory > Active Rentals
+          AND (
+              SELECT COUNT(i2.inventory_id)
+              FROM public.inventory i2
+              WHERE i2.film_id = f.film_id
+          ) > (
+              SELECT COUNT(r2.rental_id)
+              FROM public.rental r2
+              JOIN public.inventory i2 ON r2.inventory_id = i2.inventory_id
+              WHERE i2.film_id = f.film_id
+                AND r2.return_date IS NULL
           )
-        ORDER BY f.title, i.inventory_id
+        -- Order by title (for DISTINCT) and rental_date DESC (for latest rental)
+        ORDER BY f.title, r.rental_date DESC
     LOOP
-        -- Assign results
         row_num       := rec.rn;
         film_title    := rec.film_title;
         language      := rec.lang_name;
@@ -217,8 +201,7 @@ BEGIN
         RETURN NEXT;
     END LOOP;
 
-    -- No films returned – return message row
-    IF NOT has_results THEN
+    IF NOT FOUND THEN
         row_num       := 1;
         film_title    := 'No films in stock matching pattern: ' || p_pattern;
         language      := NULL;
@@ -226,15 +209,14 @@ BEGIN
         rental_date   := NULL;
         RETURN NEXT;
     END IF;
-
 END;
 $$;
-SELECT * FROM core.films_in_stock_by_title('%xyzxyz%');
-SELECT * FROM core.films_in_stock_by_title('%love%') LIMIT 5;
 
--- TASK 5: Procedure to Insert a New Movie
--- =============================================
+-- =========================================================
+-- TASK 5: Procedure 'new_movie'
+-- =========================================================
 
+-- 1. Helper block to ensure language exists
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM public.language WHERE TRIM(name) ILIKE 'Klingon') THEN
@@ -242,10 +224,8 @@ BEGIN
     END IF;
 END $$;
 
--- 2. Cleanup
 DROP FUNCTION IF EXISTS public.new_movie(TEXT, INT, TEXT);
 
--- 3. Create Function
 CREATE OR REPLACE FUNCTION public.new_movie(
     p_title TEXT,
     p_release_year INT DEFAULT EXTRACT(YEAR FROM CURRENT_DATE)::INT,
@@ -258,18 +238,15 @@ DECLARE
     v_lang_id INT;
     v_film_id INT;
 BEGIN
-    -- A. Validate Title
     IF p_title IS NULL OR TRIM(p_title) = '' THEN
         RAISE EXCEPTION 'Movie title cannot be empty.';
     END IF;
 
-    -- B. Check for Duplicates
     IF EXISTS (SELECT 1 FROM public.film WHERE title ILIKE p_title) THEN
         RAISE NOTICE 'Movie "%" already exists. Skipping insertion.', p_title;
         RETURN;
     END IF;
 
-    -- C. Validate Language & Get ID (Fixes "Language Not Found" error)
     SELECT language_id INTO v_lang_id 
     FROM public.language 
     WHERE TRIM(name) ILIKE TRIM(p_language_name)
@@ -279,43 +256,119 @@ BEGIN
         RAISE EXCEPTION 'Language "%" does not exist in the language table.', p_language_name;
     END IF;
 
-    -- D. Generate Safe ID (Fixes "Duplicate Key" error)
     SELECT COALESCE(MAX(film_id), 0) + 1 INTO v_film_id FROM public.film;
 
-    -- E. Insert the Movie (Matches your column list exactly)
     INSERT INTO public.film (
-        film_id, 
-        title, 
-        description, 
-        release_year, 
-        language_id,
-        original_language_id, 
-        rental_duration, 
-        rental_rate, 
-        length,
-        replacement_cost, 
-        rating, 
-        last_update, 
-        special_features, 
-        fulltext
+        film_id, title, description, release_year, language_id, original_language_id, 
+        rental_duration, rental_rate, length, replacement_cost, rating, last_update, 
+        special_features, fulltext
     )
     VALUES (
-        v_film_id,           -- Generated Safe ID
-        p_title,             -- Input Title
-        NULL,                -- Description (Optional)
-        p_release_year,      -- Input Year
-        v_lang_id,           -- Found Language ID
-        NULL,                -- Original Language (Optional)
-        3,                   -- REQUIRED: Rental Duration
-        4.99,                -- REQUIRED: Rental Rate
-        NULL,                -- Length (Optional)
-        19.99,               -- REQUIRED: Replacement Cost
-        'G'::mpaa_rating,    -- Rating (Cast to Enum to avoid type errors)
-        NOW(),               -- Last Update
-        NULL,                -- Special Features
-        to_tsvector(p_title) -- REQUIRED: Generates search index data
+        v_film_id, p_title, NULL, p_release_year, v_lang_id, NULL, 
+        3, 4.99, NULL, 19.99, 'G'::mpaa_rating, NOW(), NULL, to_tsvector(p_title)
     );
 
     RAISE NOTICE 'Success: New movie "%" inserted with ID %.', p_title, v_film_id;
+END;
+$$;
+
+-- =========================================================
+-- TASK 6.2: Fix 'rewards_report'
+-- =========================================================
+-- Question: Why does ‘rewards_report’ return 0 rows?
+-- Answer: The default function uses 'CURRENT_DATE' to calculate the reporting period. 
+-- Since the Sakila database contains sample data from 2005-2006, running the function 
+-- in the current year looks for data that doesn't exist.
+-- Fix: Hardcode the date to '2006-06-01' (or similar) to capture the historical data.
+
+CREATE OR REPLACE FUNCTION public.rewards_report(
+    min_monthly_purchases INTEGER, 
+    min_dollar_amount_purchased NUMERIC
+)
+RETURNS SETOF public.customer
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    last_month_start DATE;
+    last_month_end DATE;
+    rr RECORD;
+    tmpSQL TEXT;
+BEGIN
+    -- FIXED: Anchor date to historical data
+    last_month_start := DATE '2006-05-01';
+    last_month_start := last_month_start - '3 month'::INTERVAL;
+    last_month_end := DATE '2006-05-01';
+
+    tmpSQL := 'SELECT c.*
+               FROM public.payment p
+               INNER JOIN public.customer c ON p.customer_id = c.customer_id
+               WHERE p.payment_date >= '''|| last_month_start ||'''
+               AND p.payment_date < '''|| last_month_end ||'''
+               GROUP BY c.customer_id
+               HAVING COUNT(p.payment_id) > '|| min_monthly_purchases ||'
+               AND SUM(p.amount) > '|| min_dollar_amount_purchased;
+
+    FOR rr IN EXECUTE tmpSQL LOOP
+        RETURN NEXT rr;
+    END LOOP;
+
+    RETURN;
+END;
+$$;
+
+-- =========================================================
+-- TASK 6.4: Update 'get_customer_balance'
+-- =========================================================
+-- Added logic: If film is more than RENTAL_DURATION * 2 overdue, charge REPLACEMENT_COST.
+
+CREATE OR REPLACE FUNCTION public.get_customer_balance(
+    p_customer_id INT, 
+    p_effective_date TIMESTAMP
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_rentfees NUMERIC;
+    v_overfees INTEGER;
+    v_payments NUMERIC;
+BEGIN
+    -- 1. Calculate Rent Fees
+    SELECT COALESCE(SUM(f.rental_rate),0) INTO v_rentfees
+    FROM public.film f
+    JOIN public.inventory i ON f.film_id = i.film_id
+    JOIN public.rental r ON i.inventory_id = r.inventory_id
+    WHERE r.rental_date <= p_effective_date
+      AND r.customer_id = p_customer_id;
+
+    -- 2. Calculate Overdue Fees (UPDATED LOGIC HERE)
+    SELECT COALESCE(SUM(
+        CASE 
+            WHEN (r.return_date - r.rental_date) > (f.rental_duration * '1 day'::interval) THEN
+                EXTRACT(DAY FROM (r.return_date - r.rental_date) - (f.rental_duration * '1 day'::interval))
+            ELSE 0 
+        END 
+        + 
+        -- NEW CONDITION: Charge Replacement Cost if Overdue > Rental Duration * 2
+        CASE
+            WHEN (EXTRACT(DAY FROM (COALESCE(r.return_date, p_effective_date) - r.rental_date)) > f.rental_duration * 2) 
+            THEN f.replacement_cost 
+            ELSE 0 
+        END
+    ),0) INTO v_overfees
+    FROM public.rental r
+    JOIN public.inventory i ON r.inventory_id = i.inventory_id
+    JOIN public.film f ON i.film_id = f.film_id
+    WHERE r.rental_date <= p_effective_date
+      AND r.customer_id = p_customer_id;
+
+    -- 3. Calculate Payments
+    SELECT COALESCE(SUM(amount),0) INTO v_payments
+    FROM public.payment
+    WHERE payment_date <= p_effective_date
+      AND customer_id = p_customer_id;
+
+    RETURN v_rentfees + v_overfees - v_payments;
 END;
 $$;
