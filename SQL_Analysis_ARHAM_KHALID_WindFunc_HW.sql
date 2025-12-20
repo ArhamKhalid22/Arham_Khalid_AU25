@@ -69,38 +69,45 @@ SELECT
     ROUND(COALESCE(ct.q3, 0), 2) AS q3,
     ROUND(COALESCE(ct.q4, 0), 2) AS q4,
     ROUND(
-        (COALESCE(ct.q1, 0) + 
-         COALESCE(ct.q2, 0) + 
-         COALESCE(ct.q3, 0) + 
-         COALESCE(ct.q4, 0)), 
+        COALESCE(ct.q1, 0) +
+        COALESCE(ct.q2, 0) +
+        COALESCE(ct.q3, 0) +
+        COALESCE(ct.q4, 0),
         2
     ) AS year_sum
 FROM crosstab(
-    -- SOURCE SQL
     $$
         SELECT 
+            p.prod_id,
             p.prod_name,
-            'Q' || t.calendar_quarter_number AS quarter_label, -- Format as Q1, Q2...
+            'Q' || t.calendar_quarter_number AS quarter_label,
             SUM(s.amount_sold) AS quarter_sales
         FROM sh.sales s
-        JOIN sh.products p ON s.prod_id = p.prod_id
-        JOIN sh.times t ON s.time_id = t.time_id
-        JOIN sh.customers c ON s.cust_id = c.cust_id
-        JOIN sh.countries co ON c.country_id = co.country_id
-        WHERE p.prod_category = 'Photo'
+        JOIN sh.products  p  ON s.prod_id = p.prod_id
+        JOIN sh.times     t  ON s.time_id = t.time_id
+        JOIN sh.customers cu ON s.cust_id = cu.cust_id
+        JOIN sh.countries co ON cu.country_id = co.country_id
+        WHERE LOWER(p.prod_category) = LOWER('Photo')
           AND t.calendar_year = 2000
-          AND co.country_region = 'Asia' -- Critical filter missing in original prompt
-        GROUP BY p.prod_name, t.calendar_quarter_number
-        ORDER BY p.prod_name, t.calendar_quarter_number
+          AND UPPER(co.country_region) = UPPER('Asia')
+        GROUP BY
+            p.prod_id,
+            p.prod_name,
+            t.calendar_quarter_number
+        ORDER BY
+            p.prod_id,
+            t.calendar_quarter_number
     $$,
-    -- CATEGORY SQL
     $$ VALUES ('Q1'), ('Q2'), ('Q3'), ('Q4') $$
 ) AS ct(
+    prod_id   INTEGER,
     prod_name TEXT,
-    q1 NUMERIC, q2 NUMERIC, q3 NUMERIC, q4 NUMERIC
+    q1 NUMERIC,
+    q2 NUMERIC,
+    q3 NUMERIC,
+    q4 NUMERIC
 )
 ORDER BY year_sum DESC;
-
 
 /* TASK 3 STRATEGY:
    1. Optimization: Isolate the "Top 300 Customers" first using a CTE. 
@@ -109,16 +116,21 @@ ORDER BY year_sum DESC;
    2. The main query then acts as a report generator, simply looking up details 
       for the IDs found in the CTE.
 */
-
-WITH TopCustomers AS (
-    SELECT 
-        s.cust_id
+WITH customer_totals AS (
+    SELECT
+        s.cust_id,
+        SUM(s.amount_sold) AS total_sales
     FROM sh.sales s
     JOIN sh.times t ON s.time_id = t.time_id
     WHERE t.calendar_year IN (1998, 1999, 2001)
     GROUP BY s.cust_id
-    ORDER BY SUM(s.amount_sold) DESC
-    LIMIT 300 -- Isolate the VIPs immediately
+),
+TopCustomers AS (
+    SELECT
+        cust_id,
+        total_sales,
+        ROW_NUMBER() OVER (ORDER BY total_sales DESC) AS rn
+    FROM customer_totals
 )
 SELECT 
     ch.channel_desc,
@@ -127,18 +139,18 @@ SELECT
     c.cust_first_name,
     ROUND(SUM(s.amount_sold), 2) AS amount_sold
 FROM sh.sales s
--- Filter: Join INNERLY to the CTE. This automatically drops non-VIP customers.
 JOIN TopCustomers tc ON s.cust_id = tc.cust_id
-JOIN sh.customers c ON s.cust_id = c.cust_id
-JOIN sh.channels ch ON s.channel_id = ch.channel_id
-JOIN sh.times t ON s.time_id = t.time_id
+JOIN sh.customers c  ON s.cust_id = c.cust_id
+JOIN sh.channels ch  ON s.channel_id = ch.channel_id
+JOIN sh.times t      ON s.time_id = t.time_id
 WHERE t.calendar_year IN (1998, 1999, 2001)
+  AND tc.rn <= 300
 GROUP BY 
-    ch.channel_desc, 
-    c.cust_id, 
-    c.cust_last_name, 
+    ch.channel_desc,
+    c.cust_id,
+    c.cust_last_name,
     c.cust_first_name
-ORDER BY 
+ORDER BY
     amount_sold DESC;
 
 
@@ -171,4 +183,5 @@ GROUP BY
     p.prod_category
 ORDER BY 
     t.calendar_month_desc, 
+
     p.prod_category;
