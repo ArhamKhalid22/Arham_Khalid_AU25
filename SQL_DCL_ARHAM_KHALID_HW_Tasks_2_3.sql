@@ -220,9 +220,8 @@ SELECT
   TASK 8 ─ Rewards Report Function (rerunnable)
 *********************************************************************************************/
 
-DROP FUNCTION IF EXISTS public.rewards_report(integer, numeric);
 
-CREATE OR REPLACE FUNCTION public.rewards_report(
+CREATE FUNCTION public.rewards_report(
     min_monthly_purchases INTEGER,
     min_dollar_amount_earned NUMERIC
 )
@@ -259,4 +258,5 @@ $$;
 -- Example test:
 --SELECT * FROM public.rewards_report(2, 20.00);
 --SELECT rolname FROM pg_roles WHERE rolname IN ('rentaluser', 'rental', 'client_mary_smith');
+
 
