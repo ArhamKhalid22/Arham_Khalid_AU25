@@ -116,22 +116,27 @@ ORDER BY year_sum DESC;
    2. The main query then acts as a report generator, simply looking up details 
       for the IDs found in the CTE.
 */
-WITH customer_totals AS (
-    SELECT
+WITH total_pool AS (
+    -- Step 1: Calculate total sales for the pool of years
+    SELECT 
         s.cust_id,
-        SUM(s.amount_sold) AS total_sales
+        SUM(s.amount_sold) as total_combined_sales
     FROM sh.sales s
     JOIN sh.times t ON s.time_id = t.time_id
     WHERE t.calendar_year IN (1998, 1999, 2001)
     GROUP BY s.cust_id
 ),
-TopCustomers AS (
-    SELECT
-        cust_id,
-        total_sales,
-        ROW_NUMBER() OVER (ORDER BY total_sales DESC) AS rn
-    FROM customer_totals
+top_300_ids AS (
+    -- Step 2: Rank them and pick the top 300
+    SELECT cust_id
+    FROM (
+        SELECT cust_id, 
+               ROW_NUMBER() OVER (ORDER BY total_combined_sales DESC) as rn
+        FROM total_pool
+    )
+    WHERE rn <= 300
 )
+-- Step 3: Final Report
 SELECT 
     ch.channel_desc,
     c.cust_id,
@@ -139,20 +144,18 @@ SELECT
     c.cust_first_name,
     ROUND(SUM(s.amount_sold), 2) AS amount_sold
 FROM sh.sales s
-JOIN TopCustomers tc ON s.cust_id = tc.cust_id
 JOIN sh.customers c  ON s.cust_id = c.cust_id
 JOIN sh.channels ch  ON s.channel_id = ch.channel_id
 JOIN sh.times t      ON s.time_id = t.time_id
-WHERE t.calendar_year IN (1998, 1999, 2001)
-  AND tc.rn <= 300
+WHERE s.cust_id IN (SELECT cust_id FROM top_300_ids) -- Filter by our Top 300 list
+  AND t.calendar_year IN (1998, 1999, 2001)         -- Only report these years
 GROUP BY 
     ch.channel_desc,
     c.cust_id,
     c.cust_last_name,
     c.cust_first_name
-ORDER BY
+ORDER BY 
     amount_sold DESC;
-
 
 /* TASK 4 STRATEGY:
    1. Use Conditional Aggregation ("Pivoting with CASE").
@@ -185,3 +188,4 @@ ORDER BY
     t.calendar_month_desc, 
 
     p.prod_category;
+
