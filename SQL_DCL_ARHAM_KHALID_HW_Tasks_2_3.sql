@@ -37,76 +37,31 @@ GRANT rental TO rentaluser;
 -- rental role permissions
 GRANT SELECT ON public.customer TO rental;
 GRANT SELECT ON public.payment  TO rental;
-GRANT SELECT, INSERT, UPDATE ON public.rental TO rental;
+GRANT SELECT, UPDATE ON public.rental TO rental; -- Removed INSERT from the grant list
+
+-- Explicitly Revoke INSERT (as requested)
+REVOKE INSERT ON public.rental FROM rental;
 
 GRANT USAGE ON SEQUENCE public.rental_rental_id_seq TO rental;
 
 
 /********************************************************************************************
-  TASK 3–4 ─ Test INSERT / UPDATE as rentaluser (no hardcoded IDs, no duplicates)
+  TASK 3–4 ─ Verification: Test INSERT Denial as rentaluser
 *********************************************************************************************/
 
 SET ROLE rentaluser;
 
 DO $$
-DECLARE
-    v_customer_id  INTEGER;
-    v_inventory_id INTEGER;
 BEGIN
-    -- STEP 1: Dynamic eligible customer
-    SELECT c.customer_id
-    INTO v_customer_id
-    FROM public.customer c
-    JOIN public.rental  r ON r.customer_id = c.customer_id
-    JOIN public.payment p ON p.customer_id = c.customer_id
-    GROUP BY c.customer_id
-    HAVING COUNT(r.rental_id) > 0
-       AND COUNT(p.payment_id) > 0
-    ORDER BY c.customer_id
-    LIMIT 1;
-
-    IF v_customer_id IS NULL THEN
-        RAISE NOTICE 'No eligible customer found.';
-        RETURN;
-    END IF;
-
-    -- STEP 2: Choose an inventory previously rented by that customer
-    SELECT r.inventory_id
-    INTO v_inventory_id
-    FROM public.rental r
-    WHERE r.customer_id = v_customer_id
-    ORDER BY r.rental_id
-    LIMIT 1;
-
-    IF v_inventory_id IS NULL THEN
-        RAISE NOTICE 'No inventory found for customer %.', v_customer_id;
-        RETURN;
-    END IF;
-
-    -- STEP 3: Insert rental only if one doesn't already exist today
-    INSERT INTO public.rental (
-        rental_date,
-        inventory_id,
-        customer_id,
-        return_date,
-        staff_id,
-        last_update
-    )
-    SELECT
-        CURRENT_TIMESTAMP,
-        v_inventory_id,
-        v_customer_id,
-        CURRENT_TIMESTAMP + INTERVAL '2 days',
-        1,
-        CURRENT_TIMESTAMP
-    WHERE NOT EXISTS (
-        SELECT 1
-        FROM public.rental r
-        WHERE r.customer_id  = v_customer_id
-          AND r.inventory_id = v_inventory_id
-          AND r.rental_date::date = CURRENT_DATE
-    );
-
+    -- Attempting an insert to prove it is denied
+    BEGIN
+        INSERT INTO public.rental (rental_date, inventory_id, customer_id, staff_id)
+        VALUES (CURRENT_TIMESTAMP, 1, 1, 1);
+        
+        RAISE NOTICE 'Error: Insert should have been denied, but it succeeded.';
+    EXCEPTION WHEN insufficient_privilege THEN
+        RAISE NOTICE 'Success: INSERT permission was correctly denied for rentaluser.';
+    END;
 END $$;
 
 RESET ROLE;
@@ -214,49 +169,3 @@ UNION ALL
 SELECT
     'public.payment',
     has_table_privilege('client_mary_smith', 'public.payment', 'SELECT');
-
-
-/********************************************************************************************
-  TASK 8 ─ Rewards Report Function (rerunnable)
-*********************************************************************************************/
-
-
-CREATE FUNCTION public.rewards_report(
-    min_monthly_purchases INTEGER,
-    min_dollar_amount_earned NUMERIC
-)
-RETURNS TABLE (
-    customer_id INTEGER,
-    email TEXT,
-    total_spent NUMERIC,
-    avg_monthly_rentals NUMERIC
-)
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    RETURN QUERY
-    SELECT 
-        c.customer_id,
-        c.email,
-        SUM(p.amount)::NUMERIC AS total_spent,
-        ROUND(AVG(m.count_rentals), 2)::NUMERIC AS avg_monthly_rentals
-    FROM public.customer c
-    JOIN public.payment p
-      ON p.customer_id = c.customer_id
-    JOIN LATERAL (
-        SELECT COUNT(*)::INT AS count_rentals
-        FROM public.rental r
-        WHERE r.customer_id = c.customer_id
-        GROUP BY date_trunc('month', r.rental_date)
-    ) m ON TRUE
-    GROUP BY c.customer_id, c.email
-    HAVING SUM(p.amount) >= min_dollar_amount_earned
-       AND MIN(m.count_rentals) >= min_monthly_purchases;
-END;
-$$;
-
--- Example test:
---SELECT * FROM public.rewards_report(2, 20.00);
---SELECT rolname FROM pg_roles WHERE rolname IN ('rentaluser', 'rental', 'client_mary_smith');
-
-
